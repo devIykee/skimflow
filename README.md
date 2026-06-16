@@ -12,17 +12,7 @@ Runs **end-to-end out of the box in simulate mode** (no keys), and flips to **re
 
 ---
 
-## Run it in one command
-
-```bash
-cd lepton-linepay-cite
-npm run up          # installs (first run), starts the server, seeds, generates demo traffic
-# → prints all URLs; Ctrl-C stops the server. No terminal hopping.
-```
-
-Flags: `npm run up:fresh` (wipe DB + `.next` first), `bash scripts/dev.sh --no-traffic`, `--no-seed`, or `PORT=3001 npm run up`. Run the agent in a second terminal while the server stays up: `npm run agent -- "…"`.
-
----
+## Why this matters
 
 ## Why this wins (mapped to the judging rubric)
 
@@ -32,36 +22,6 @@ Flags: `npm run up:fresh` (wipe DB + `.next` first), `bash scripts/dev.sh --no-t
 | **30%** | **Traction** | **Both sides of the market are real and live.** Humans pay per line on `/read`; the agent pays autonomously on `/demo`. A live stats bar shows real volume, payment count, and the human/agent split during the event window — exactly "creators earning and readers paying." |
 | **20%** | **Circle tool usage** | **x402** (per-request paywall), **Circle Gateway nanopayments** (gas-free batched settlement, $0.000001 floor), **USDC on Arc**, **Circle Contracts** (on-chain `RevenueSplit`), and **Circle Agent Stack** (agent wallet). Mirrors the `circlefin/arc-nanopayments` reference end to end. |
 | **20%** | **Innovation** | **Pay-per-citation**: when an agent grounds an answer in a line range, the citation *is* the payment, with a tx-hash receipt as provenance (RFB 6 Prior Art #1). Per-line granularity turns "what should this cost?" into a decision made thousands of times an hour. |
-
----
-
-## File tree
-
-```
-lepton-linepay-cite/
-├── apps/
-│   ├── web/                      # Next.js 15 (App Router) — UI + API + x402 paywall
-│   │   ├── app/
-│   │   │   ├── page.tsx           # landing + live traction stats
-│   │   │   ├── read/page.tsx      # ⭐ HUMAN reader — pay per line to unlock
-│   │   │   ├── creators/page.tsx  # creator portal (upload, pricing, earnings, history)
-│   │   │   ├── demo/page.tsx      # ⭐ AGENT demo + live tx feed (human/agent tagged)
-│   │   │   └── api/
-│   │   │       ├── content/[id]/        # ⭐ x402-protected per-line endpoint (402 → pay → 200)
-│   │   │       ├── content/[id]/meta/   # reader-facing metadata + free preview
-│   │   │       ├── reader/[id]/         # ⭐ human pay-per-line settlement
-│   │   │       ├── research/            # ⭐ triggers the autonomous buyer agent
-│   │   │       ├── creators/…           # register + earnings dashboard
-│   │   │       ├── catalog/ feed/ stats/ policy/
-│   │   └── lib/                   # db (SQLite), store, payments
-│   └── agent/                    # Buyer agent (LangChain + x402 client)
-│       └── src/{agent,x402-client,cli}.ts
-├── packages/
-│   └── sdk/                      # @linepay/sdk — x402, Gateway, pricing, hashing, Guardian
-├── contracts/                    # RevenueSplit.sol (85/10/5) + Hardhat deploy to Arc
-├── scripts/{setup.sh,seed.mjs,demo-traffic.mjs}
-└── README.md
-```
 
 ---
 
