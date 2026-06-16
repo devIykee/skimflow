@@ -16,6 +16,13 @@ const nextConfig = {
       ".js": [".ts", ".tsx", ".js", ".jsx"],
       ".mjs": [".mts", ".mjs"],
     };
+    // @metamask/sdk optionally imports React Native AsyncStorage; it's not used
+    // in the browser build. Alias it away to silence the "module not found"
+    // warning from WalletConnect's optional deps.
+    config.resolve.alias = {
+      ...(config.resolve.alias ?? {}),
+      "@react-native-async-storage/async-storage": false,
+    };
     return config;
   },
 };

@@ -5,13 +5,20 @@ import { useEffect, useState } from "react";
 interface Step { phase: string; thought: string; t: number }
 interface Citation { title: string; creator: string; lineStart: number; lineEnd: number; amountDisplay: string; txHash: string }
 interface Result {
-  brain: string; mode: string; steps: Step[]; citations: Citation[];
+  brain: string; modelLabel?: string; mode: string; steps: Step[]; citations: Citation[];
   answer: string; spentDisplay: string; remainingDisplay: string;
 }
 
-const ICONS: Record<string, string> = {
-  plan: "🧭", discover: "🔎", preview: "👀", evaluate: "⚖️", guardian: "🛡️",
-  pay: "💸", skip: "⏭️", extract: "📄", synthesize: "🧩", done: "✅",
+// Material Symbols icon per phase (mirrors the Stitch timeline).
+const PHASE_ICON: Record<string, string> = {
+  plan: "explore", discover: "search", preview: "visibility", evaluate: "balance",
+  guardian: "gpp_good", pay: "payments", skip: "block", extract: "description",
+  synthesize: "extension", done: "verified",
+};
+const PHASE_LABEL: Record<string, string> = {
+  plan: "PLAN", discover: "DISCOVER", preview: "PREVIEW", evaluate: "EVALUATE",
+  guardian: "GUARDIAN", pay: "PAY", skip: "SKIP", extract: "EXTRACT",
+  synthesize: "SYNTHESIZE", done: "DONE",
 };
 
 export default function DemoPage() {
@@ -23,28 +30,24 @@ export default function DemoPage() {
 
   // Reveal reasoning steps one at a time for a live feel.
   useEffect(() => {
-    if (!result) return;
-    if (shown >= result.steps.length) return;
-    const id = setTimeout(() => setShown((s) => s + 1), 350);
+    if (!result || shown >= result.steps.length) return;
+    const id = setTimeout(() => setShown((s) => s + 1), 380);
     return () => clearTimeout(id);
   }, [result, shown]);
 
   // Poll the live transaction feed.
   useEffect(() => {
-    const load = () => fetch("/api/feed?limit=8").then((r) => r.json()).then((d) => setFeed(d.payments ?? []));
+    const load = () => fetch("/api/feed?limit=10").then((r) => r.json()).then((d) => setFeed(d.payments ?? []));
     load();
     const id = setInterval(load, 2500);
     return () => clearInterval(id);
   }, []);
 
   async function run() {
-    setRunning(true);
-    setResult(null);
-    setShown(0);
+    setRunning(true); setResult(null); setShown(0);
     try {
       const res = await fetch("/api/research", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
+        method: "POST", headers: { "content-type": "application/json" },
         body: JSON.stringify({ query }),
       });
       setResult(await res.json());
@@ -53,82 +56,133 @@ export default function DemoPage() {
     }
   }
 
+  const done = result && shown >= result.steps.length;
+
   return (
-    <div className="grid gap-6 md:grid-cols-3">
-      <div className="md:col-span-2 space-y-4">
-        <h1 className="font-serif text-2xl font-bold">Reader / Agent demo</h1>
-        <p className="text-sm text-black/60">
-          Ask a research question, or try <em>&quot;continue reading The Clockwork Archive&quot;</em>. The
-          autonomous agent discovers paywalled sources, decides what&apos;s worth paying for, clears
-          Guardian policy, and pays per line via x402 + Circle Gateway on Arc.
-        </p>
+    <div className="mx-auto max-w-max-width px-margin-mobile py-stack-lg md:px-margin-desktop">
+      <div className="flex flex-col gap-gutter md:flex-row">
+        {/* Main column */}
+        <div className="w-full space-y-stack-lg md:w-3/4">
+          {/* Query input */}
+          <section className="card">
+            <h1 className="mb-stack-md font-display-lg text-display-lg-mobile text-on-surface md:text-display-lg">
+              Cite-Aware Agent
+            </h1>
+            <div className="group relative">
+              <textarea
+                className="min-h-[120px] w-full rounded-lg border border-outline-variant bg-background p-stack-md font-body-lg text-body-lg transition-all focus:border-primary focus:outline-none"
+                placeholder="What are the macro-economic implications of USDC on Arc for creator economies? …or 'continue reading The Clockwork Archive'"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+              />
+              <div className="absolute bottom-4 right-4">
+                <button className="btn-primary rounded-full px-stack-lg py-stack-sm" onClick={run} disabled={running}>
+                  <span className="material-symbols-outlined text-[20px]">bolt</span>
+                  {running ? "Running…" : "Run Agent"}
+                </button>
+              </div>
+            </div>
+          </section>
 
-        <div className="flex gap-2">
-          <input className="input" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Ask the agent…" />
-          <button className="btn btn-accent" onClick={run} disabled={running}>
-            {running ? "Thinking…" : "Run agent"}
-          </button>
+          {/* Chain-of-thought timeline */}
+          {result && (
+            <section className="relative space-y-stack-md">
+              <div className="absolute left-6 top-10 bottom-4 -z-10 w-px bg-outline-variant" />
+              <div className="ml-14 flex items-center gap-2">
+                <h3 className="label-caps">Agent reasoning path</h3>
+                <span className="pill">{result.modelLabel ?? (result.brain === "llm" ? "LLM" : "heuristic")} · {result.mode}</span>
+              </div>
+              {result.steps.slice(0, shown).map((s, i) => {
+                const isPay = s.phase === "pay";
+                const isDone = s.phase === "done";
+                const accent = isPay || isDone;
+                return (
+                  <div key={i} className="ml-2 flex items-start gap-6">
+                    <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${accent ? "bg-secondary-container text-on-secondary-container" : "border border-on-surface/10 bg-surface-container-high text-on-surface"} ${isPay ? "animate-pulse" : ""}`}>
+                      <span className="material-symbols-outlined text-[18px]" style={accent ? { fontVariationSettings: "'FILL' 1" } : undefined}>
+                        {PHASE_ICON[s.phase] ?? "circle"}
+                      </span>
+                    </div>
+                    <div className="flex flex-col pt-1">
+                      <span className={`font-label-caps text-label-caps ${accent ? "text-secondary" : s.phase === "plan" ? "text-primary" : "text-on-surface"}`}>
+                        PHASE {String(i + 1).padStart(2, "0")}: {PHASE_LABEL[s.phase] ?? s.phase.toUpperCase()}
+                      </span>
+                      <p className={`font-body-sm text-body-sm ${accent ? "text-secondary" : "text-on-surface-variant"}`}>{s.thought}</p>
+                    </div>
+                  </div>
+                );
+              })}
+            </section>
+          )}
+
+          {/* Answer + citations */}
+          {done && (
+            <article className="card space-y-stack-md">
+              <div className="flex items-center gap-2 text-outline">
+                <span className="material-symbols-outlined text-[16px]">verified</span>
+                <span className="label-caps">Verified agent response</span>
+              </div>
+              <p className="whitespace-pre-wrap font-body-lg text-body-lg leading-relaxed text-on-surface">
+                {result.answer}
+              </p>
+              <div className="space-y-base border-t border-outline-variant pt-stack-md">
+                <h4 className="label-caps">Paid sources</h4>
+                <ul className="space-y-base">
+                  {result.citations.map((c, i) => (
+                    <li key={i} className="group flex items-center justify-between rounded p-2 text-body-sm transition-colors hover:bg-surface-container-low">
+                      <div className="flex items-center gap-3">
+                        <span className="font-bold text-primary">[{i + 1}]</span>
+                        <span className="font-medium">{c.title}</span>
+                        <span className="italic text-on-surface-variant">by @{c.creator}</span>
+                        <span className="font-data-mono text-[11px] text-outline">L{c.lineStart}–{c.lineEnd}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="rounded bg-secondary-container px-2 py-0.5 text-[10px] font-bold text-on-secondary-container">{c.amountDisplay}</span>
+                        <span className="code-chip text-[10px]">{c.txHash.slice(0, 8)}…</span>
+                      </div>
+                    </li>
+                  ))}
+                  {result.citations.length === 0 && (
+                    <li className="font-body-sm text-on-surface-variant">No sources cleared the Guardian policy — try raising the budget.</li>
+                  )}
+                </ul>
+                <p className="pt-2 font-body-sm text-body-sm">
+                  Spent <strong className="text-primary">{result.spentDisplay}</strong> · {result.remainingDisplay} budget left.
+                </p>
+              </div>
+            </article>
+          )}
         </div>
 
-        {result && (
-          <>
-            <div className="card">
-              <div className="mb-2 flex items-center justify-between">
-                <h2 className="font-semibold">Chain of thought</h2>
-                <span className="pill">{result.brain === "llm" ? "Claude reasoning" : "heuristic"} · {result.mode}</span>
-              </div>
-              <ol className="space-y-2 text-sm">
-                {result.steps.slice(0, shown).map((s, i) => (
-                  <li key={i} className="flex gap-2">
-                    <span>{ICONS[s.phase] ?? "•"}</span>
-                    <span><span className="mono text-xs text-black/40">[{s.phase}]</span> {s.thought}</span>
-                  </li>
-                ))}
-              </ol>
+        {/* Live payments sidebar */}
+        <aside className="w-full md:w-1/4">
+          <div className="sticky top-24 space-y-stack-md">
+            <div className="flex items-center justify-between">
+              <h3 className="label-caps">Live payments</h3>
+              <div className="h-2 w-2 animate-pulse rounded-full bg-secondary" />
             </div>
-
-            {shown >= result.steps.length && (
-              <>
-                <div className="card">
-                  <h2 className="mb-2 font-semibold">Answer</h2>
-                  <pre className="whitespace-pre-wrap font-serif text-sm">{result.answer}</pre>
+            <div className="max-h-[600px] space-y-stack-sm overflow-y-auto pr-2">
+              {feed.map((p) => (
+                <div key={p.id} className="rounded-lg border border-on-surface/10 bg-surface-container-low p-stack-sm transition-all hover:bg-surface-container-lowest">
+                  <div className="mb-1 flex items-start justify-between">
+                    <span className="font-label-caps text-label-caps text-on-surface">@{p.creator_handle}</span>
+                    <span className="text-[12px] font-bold text-secondary">+{p.creator_amount} µUSDC</span>
+                  </div>
+                  <p className="mb-2 truncate font-body-sm text-[12px] text-on-surface-variant">{p.title}</p>
+                  <div className="flex items-center gap-1.5 font-data-mono text-[10px] text-outline">
+                    <span title={p.payer_kind === "human" ? "human reader" : "AI agent"}>{p.payer_kind === "human" ? "👤" : "🤖"}</span>
+                    <span className="material-symbols-outlined text-[12px]">segment</span>
+                    <span>L{p.line_start}-{p.line_end}</span>
+                    <span className="mx-1">•</span>
+                    <span>{p.tx_hash.slice(0, 6)}…{p.tx_hash.slice(-3)}</span>
+                  </div>
                 </div>
-                <div className="card">
-                  <h2 className="mb-2 font-semibold">Citations &amp; payments</h2>
-                  <ul className="space-y-1 text-sm">
-                    {result.citations.map((c, i) => (
-                      <li key={i}>
-                        [{i + 1}] <strong>{c.title}</strong> @{c.creator} · lines {c.lineStart}–{c.lineEnd} ·
-                        paid <span className="text-accent2">{c.amountDisplay}</span> ·
-                        <span className="mono text-xs text-black/40"> {c.txHash.slice(0, 14)}…</span>
-                      </li>
-                    ))}
-                    {result.citations.length === 0 && <li className="text-black/50">No paid sources.</li>}
-                  </ul>
-                  <p className="mt-3 text-sm">Spent <strong>{result.spentDisplay}</strong> · {result.remainingDisplay} budget left.</p>
-                </div>
-              </>
-            )}
-          </>
-        )}
+              ))}
+              {feed.length === 0 && <p className="font-body-sm text-body-sm text-on-surface-variant">No payments yet — run the agent.</p>}
+            </div>
+          </div>
+        </aside>
       </div>
-
-      <aside className="space-y-3">
-        <h2 className="font-semibold">Live payments to creators</h2>
-        <div className="space-y-2">
-          {feed.map((p) => (
-            <div key={p.id} className="card !p-3 text-xs">
-              <div className="flex justify-between">
-                <span className="font-medium">@{p.creator_handle}</span>
-                <span className="text-accent2 mono">+{p.creator_amount} µUSDC</span>
-              </div>
-              <div className="text-black/50">{p.title} · lines {p.line_start}–{p.line_end}</div>
-              <div className="mono text-[10px] text-black/30">{p.tx_hash.slice(0, 18)}… {p.simulated ? "(sim)" : ""}</div>
-            </div>
-          ))}
-          {feed.length === 0 && <p className="text-sm text-black/40">No payments yet — run the agent.</p>}
-        </div>
-      </aside>
     </div>
   );
 }

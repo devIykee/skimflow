@@ -16,13 +16,39 @@ import type { Content, Creator } from "./store.js";
 export const arc = loadArcConfig();
 export const gateway = new GatewayClient(arc);
 
+const HEX_ADDRESS = /^0x[0-9a-fA-F]{40}$/;
+/** A valid, well-known burn address. Last-resort payout so a sale can always
+ * settle on-chain even if every configured address is missing/malformed. */
+const BURN_ADDRESS = "0x000000000000000000000000000000000000dEaD" as Address;
+
+/** Return `a` only if it's a syntactically valid EVM address, else undefined. */
+function validAddr(a?: string | null): Address | undefined {
+  return a && HEX_ADDRESS.test(a) ? (a as Address) : undefined;
+}
+
 function platformAddress(): Address {
-  return (process.env.PLATFORM_ADDRESS as Address) ??
-    ("0x0000000000000000000000000000000000000001" as Address);
+  return validAddr(process.env.PLATFORM_ADDRESS) ?? BURN_ADDRESS;
 }
 function referrerAddress(): Address {
-  return (process.env.REFERRER_ADDRESS as Address) ??
-    ("0x0000000000000000000000000000000000000002" as Address);
+  return validAddr(process.env.REFERRER_ADDRESS) ?? BURN_ADDRESS;
+}
+
+/**
+ * Resolve the on-chain recipient for a creator's sales. Layered so it always
+ * yields a valid address (never 422s the payment):
+ *   1. REVENUE_SPLIT_ADDRESS  — on-chain split contract, if configured
+ *   2. CREATOR_PAYOUT_ADDRESS — demo override: route every sale here (easily
+ *      swapped in env for a "send to nowhere" dummy or your own wallet)
+ *   3. the creator's own wallet, if it's a valid address
+ *   4. BURN_ADDRESS           — last-resort fallback
+ */
+export function payoutAddress(creator: Creator): Address {
+  return (
+    validAddr(arc.revenueSplitAddress) ??
+    validAddr(process.env.CREATOR_PAYOUT_ADDRESS) ??
+    validAddr(creator.wallet) ??
+    BURN_ADDRESS
+  );
 }
 
 /**
@@ -42,7 +68,7 @@ export function requirementFor(
     lineStart,
     lineEnd
   );
-  const payTo = (arc.revenueSplitAddress ?? (creator.wallet as Address)) as Address;
+  const payTo = payoutAddress(creator);
   return quoteRequirement({
     amount: total.toString(),
     asset: arc.usdcAddress,
@@ -63,7 +89,7 @@ export function requirementFor(
 export function splitFor(total: bigint, creator: Creator) {
   return splitRevenue(
     total,
-    creator.wallet as Address,
+    payoutAddress(creator),
     platformAddress(),
     referrerAddress(),
     DEFAULT_SPLIT_BPS

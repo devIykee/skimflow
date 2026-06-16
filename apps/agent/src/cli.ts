@@ -32,7 +32,7 @@ async function main() {
   for (const c of result.citations) {
     console.log(`  • "${c.title}" @${c.creator} lines ${c.lineStart}-${c.lineEnd} — paid ${c.amountDisplay} (tx ${c.txHash.slice(0, 12)}…)`);
   }
-  console.log(`\n💰 spent ${result.spentDisplay} (${result.brain} brain), ${result.remainingDisplay} budget left\n`);
+  console.log(`\n💰 spent ${result.spentDisplay} · reasoning: ${result.modelLabel} · ${result.remainingDisplay} budget left\n`);
 }
 
 main().catch((e) => {

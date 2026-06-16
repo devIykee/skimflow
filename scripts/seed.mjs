@@ -13,7 +13,7 @@ const creators = [
   { handle: "ada_writes", display_name: "Ada Quill", wallet: "0xADA0000000000000000000000000000000000001", verified: true },
   { handle: "satoshi_serializes", display_name: "S. Nakareader", wallet: "0x5A70000000000000000000000000000000000002", verified: true },
   { handle: "indie_mira", display_name: "Mira Lin", wallet: "0x31DE000000000000000000000000000000000003", verified: false },
-  { handle: "novelist_kai", display_name: "Kai Ardent", wallet: "0xKA10000000000000000000000000000000000004", verified: true },
+  { handle: "novelist_kai", display_name: "Kai Ardent", wallet: "0xca10000000000000000000000000000000000004", verified: true },
 ];
 
 const lines = (...l) => l.join("\n");

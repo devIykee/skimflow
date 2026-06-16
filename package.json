@@ -9,10 +9,15 @@
     "contracts"
   ],
   "scripts": {
+    "up": "bash scripts/dev.sh",
+    "up:fresh": "bash scripts/dev.sh --fresh",
     "dev": "npm run dev --workspace apps/web",
     "build": "npm run build --workspace apps/web",
     "seed": "node scripts/seed.mjs",
+    "demo:traffic": "node scripts/demo-traffic.mjs",
     "agent": "npm run agent --workspace apps/agent",
+    "circle": "npm run circle --workspace apps/agent --",
+    "circle:setup": "bash scripts/circle-setup.sh",
     "setup": "bash scripts/setup.sh",
     "contracts:compile": "npm run compile --workspace contracts",
     "contracts:deploy": "npm run deploy --workspace contracts"

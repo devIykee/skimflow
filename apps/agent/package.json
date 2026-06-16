@@ -7,17 +7,23 @@
   "types": "./src/index.ts",
   "exports": { ".": "./src/index.ts" },
   "scripts": {
-    "agent": "node --experimental-strip-types src/cli.ts",
+    "agent": "tsx src/cli.ts",
+    "circle": "tsx src/circle-pay.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@langchain/anthropic": "^0.3.0",
     "@langchain/core": "^0.3.0",
+    "@langchain/groq": "^0.2.0",
     "@linepay/sdk": "*",
     "viem": "^2.21.0"
   },
+  "optionalDependencies": {
+    "@circle-fin/x402-batching": "latest"
+  },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
     "typescript": "^5.6.0"
   }
 }

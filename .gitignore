@@ -1,13 +1,19 @@
 node_modules/
 .next/
 dist/
+# SQLite (incl. WAL-mode sidecar files)
 *.db
 *.db-journal
+*.db-wal
+*.db-shm
+# Secrets — never commit real env files (only .env.example is tracked)
 .env
 .env.local
 .env*.local
 artifacts/
 cache/
 typechain-types/
+# Build artifacts
+*.tsbuildinfo
 .DS_Store
 *.log

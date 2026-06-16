@@ -79,5 +79,16 @@ function migrate(d: Database.Database) {
     CREATE INDEX IF NOT EXISTS idx_content_creator ON content(creator_id);
     CREATE INDEX IF NOT EXISTS idx_payments_creator ON payments(creator_id);
     CREATE INDEX IF NOT EXISTS idx_payments_created ON payments(created_at DESC);
+
+    -- Off-chain blob store for the on-chain marketplace. Holds the AES-256-GCM
+    -- ciphertext of published content when Pinata/IPFS is not configured; the
+    -- pseudo-CID (local://sha256) is what gets written on-chain. Reveal is gated
+    -- by an on-chain hasAccess check (see app/api/reveal).
+    CREATE TABLE IF NOT EXISTS ipfs_blobs (
+      cid         TEXT PRIMARY KEY,
+      ciphertext  TEXT NOT NULL,
+      kind        TEXT NOT NULL DEFAULT 'agent-skill',
+      created_at  INTEGER NOT NULL
+    );
   `);
 }

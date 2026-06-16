@@ -40,10 +40,15 @@ done
 echo "▸ seeding sample creators + content…"
 npm run seed
 
+# 6. Generate demo traction (human + agent payments) so the dashboards are live
+echo "▸ generating demo traffic (human reads + agent runs)…"
+npm run demo:traffic || true
+
 cat <<EOF
 
 ✅ Ready.
    • Landing       http://localhost:3000
+   • Read & pay     http://localhost:3000/read
    • Creator portal http://localhost:3000/creators
    • Agent demo     http://localhost:3000/demo
 

@@ -1,12 +1,14 @@
 /* eslint-disable no-console */
 const hre = require("hardhat");
+const { assertTestnet } = require("./_testnet-guard.cjs");
 
 /**
- * Deploys RevenueSplit to Arc testnet with USDC + platform + referrer from env.
- * After deploy, copy the printed address into REVENUE_SPLIT_ADDRESS in .env so
- * the x402 endpoint routes payments through the on-chain split.
+ * Deploys RevenueSplit to Arc TESTNET with (test) USDC + platform + referrer
+ * from env. After deploy, copy the printed address into REVENUE_SPLIT_ADDRESS
+ * in .env so the x402 endpoint routes payments through the on-chain split.
  */
 async function main() {
+  await assertTestnet(hre);
   const usdc = process.env.USDC_ADDRESS;
   const platform = process.env.PLATFORM_ADDRESS;
   const referrer = process.env.REFERRER_ADDRESS;

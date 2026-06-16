@@ -6,7 +6,7 @@ import type {
   PaymentRequirement,
   SettlementReceipt,
 } from "./types.js";
-import { loadArcConfig, arcChain, type ArcConfig } from "./arc.js";
+import { loadArcConfig, type ArcConfig } from "./arc.js";
 
 /**
  * GatewayClient wraps Circle Gateway nanopayments on Arc.
@@ -39,7 +39,10 @@ export class GatewayClient {
     from: Address,
     privateKey?: Hex
   ): Promise<PaymentPayload> {
-    const validBefore = Math.floor(Date.now() / 1000) + req.maxTimeoutSeconds;
+    // Circle requires validBefore ≥ 7 days out in live mode; sim keeps it short.
+    const SEVEN_DAYS = 7 * 24 * 60 * 60 + 600;
+    const window = this.cfg.simulate ? req.maxTimeoutSeconds : Math.max(req.maxTimeoutSeconds, SEVEN_DAYS);
+    const validBefore = Math.floor(Date.now() / 1000) + window;
     const base = {
       from,
       to: req.payTo,
@@ -113,48 +116,94 @@ export class GatewayClient {
 
   // -------------------------------------------------------------------------
   // Live Circle Gateway settlement on Arc
+  //
+  // Matches Circle's Settle x402 Payment API:
+  //   POST {gatewayUrl}/v1/x402/settle
+  //   body: { paymentPayload, paymentRequirements }
+  //   200:  { success, transaction (UUID), network (CAIP-2), payer, errorReason }
+  //
+  // For production you would normally use the official SDK
+  // (`@circle-fin/x402-batching` → BatchFacilitatorClient.settle); this raw
+  // call keeps the SDK dependency optional. See packages/sdk/src/circle.ts for
+  // the official-SDK wrapper.
   // -------------------------------------------------------------------------
   private async settleLive(
     req: PaymentRequirement,
     payment: PaymentPayload
   ): Promise<SettlementReceipt> {
-    // Submit the signed authorization to the Circle Gateway facilitator.
-    // Gateway batches many such authorizations and settles them gas-free on Arc.
-    const res = await fetch(`${this.cfg.gatewayUrl}/transfers`, {
+    const p = payment.payload;
+
+    // x402 v2 payment requirements (Circle shape).
+    const paymentRequirements = {
+      scheme: "exact",
+      network: this.cfg.networkCaip2,
+      asset: req.asset,
+      amount: req.amount,
+      payTo: req.payTo,
+      maxTimeoutSeconds: req.maxTimeoutSeconds,
+      extra: {
+        name: "GatewayWalletBatched",
+        version: "1",
+        verifyingContract: this.cfg.gatewayWalletAddress ?? req.asset,
+      },
+    };
+
+    const paymentPayload = {
+      x402Version: 2,
+      accepted: paymentRequirements,
+      payload: {
+        signature: p.signature,
+        authorization: {
+          from: p.from,
+          to: p.to,
+          value: p.amount,
+          validAfter: "0",
+          validBefore: String(p.validBefore),
+          nonce: p.nonce,
+        },
+      },
+    };
+
+    const res = await fetch(`${this.cfg.gatewayUrl}${this.cfg.settlePath}`, {
       method: "POST",
       headers: {
         "content-type": "application/json",
         authorization: `Bearer ${process.env.CIRCLE_API_KEY ?? ""}`,
       },
-      body: JSON.stringify({
-        chain: "ARC-TESTNET",
-        asset: req.asset,
-        from: payment.payload.from,
-        to: req.payTo,
-        amount: req.amount,
-        nonce: payment.payload.nonce,
-        validBefore: payment.payload.validBefore,
-        signature: payment.payload.signature,
-      }),
+      body: JSON.stringify({ paymentPayload, paymentRequirements }),
     });
     if (!res.ok) {
       throw new Error(`gateway_settle_failed:${res.status}:${await res.text()}`);
     }
-    const data = (await res.json()) as { txHash: Hex; batchId?: string };
+    const data = (await res.json()) as {
+      success: boolean;
+      transaction: string;
+      network: string;
+      payer?: string;
+      errorReason?: string;
+    };
+    if (!data.success) {
+      throw new Error(`gateway_settle_rejected:${data.errorReason ?? "unknown"}`);
+    }
     return {
       success: true,
       network: "arc-testnet",
-      txHash: data.txHash,
-      batchId: data.batchId,
+      // Circle returns a transaction UUID; surface it as the receipt id.
+      txHash: (data.transaction.startsWith("0x") ? data.transaction : `0x${data.transaction.replace(/-/g, "")}`) as Hex,
+      batchId: data.transaction,
       amount: req.amount,
       payTo: req.payTo,
-      payer: payment.payload.from,
+      payer: (data.payer as Address) ?? payment.payload.from,
       settledAt: Date.now(),
       simulated: false,
     };
   }
 
-  /** EIP-712 transfer-authorization signature (live mode). */
+  /**
+   * EIP-3009 TransferWithAuthorization signature (live mode).
+   * Signed against the GatewayWalletBatched EIP-712 domain. Note Circle requires
+   * `validBefore` to be at least 7 days in the future or it rejects the auth.
+   */
   private async signAuthorization(
     auth: {
       from: Address;
@@ -169,19 +218,19 @@ export class GatewayClient {
     // Lazy import so sim-mode bundles don't need viem account utils at runtime.
     const { privateKeyToAccount } = await import("viem/accounts");
     const account = privateKeyToAccount(privateKey);
-    const chain = arcChain(this.cfg);
     return account.signTypedData({
       domain: {
-        name: "CircleGateway",
+        name: "GatewayWalletBatched",
         version: "1",
-        chainId: chain.id,
-        verifyingContract: auth.asset,
+        chainId: this.cfg.chainId,
+        verifyingContract: this.cfg.gatewayWalletAddress ?? auth.asset,
       },
       types: {
         TransferWithAuthorization: [
           { name: "from", type: "address" },
           { name: "to", type: "address" },
           { name: "value", type: "uint256" },
+          { name: "validAfter", type: "uint256" },
           { name: "validBefore", type: "uint256" },
           { name: "nonce", type: "bytes32" },
         ],
@@ -191,6 +240,7 @@ export class GatewayClient {
         from: auth.from,
         to: auth.to,
         value: BigInt(auth.amount),
+        validAfter: 0n,
         validBefore: BigInt(auth.validBefore),
         nonce: auth.nonce,
       },

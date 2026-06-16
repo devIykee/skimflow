@@ -5,7 +5,14 @@
   "scripts": {
     "compile": "hardhat compile",
     "deploy": "hardhat run scripts/deploy.cjs --network arcTestnet",
-    "deploy:local": "hardhat run scripts/deploy.cjs"
+    "deploy:local": "hardhat run scripts/deploy.cjs",
+    "deploy:marketplace": "hardhat run scripts/deploy-marketplace.cjs --network arcTestnet",
+    "deploy:marketplace:local": "hardhat run scripts/deploy-marketplace.cjs",
+    "deploy:mock-usdc": "hardhat run scripts/deploy-mock-usdc.cjs --network arcTestnet",
+    "deploy:mock-usdc:local": "hardhat run scripts/deploy-mock-usdc.cjs"
+  },
+  "dependencies": {
+    "@openzeppelin/contracts": "^5.0.2"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",

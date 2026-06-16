@@ -1,14 +1,15 @@
 import Link from "next/link";
+import StatsBar from "@/components/StatsBar";
 
 const STEPS = [
-  { code: "HTTP 402 Required", text: "The agent requests a paid line range and the server returns a payment-required status with a machine-readable x402 quote." },
+  { code: "HTTP 402 Required", text: "A reader or agent requests a paid line range and the server returns a payment-required status with a machine-readable x402 quote." },
   { code: "Guardian Check", text: "The Guardian verifies budget, max price-per-line, and verified-creator preference before any funds move." },
-  { code: "Circle Gateway", text: "The agent signs a gas-free authorization; USDC moves from the reader's wallet via the Circle Gateway." },
-  { code: "Settle on Arc", text: "The transaction settles on Arc as USDC. A cryptographic receipt proves payment and unlocks the lines." },
+  { code: "Circle Gateway", text: "A gas-free USDC authorization is signed; the nanopayment is batched through the Circle Gateway." },
+  { code: "Settle on Arc", text: "The transaction settles on Arc as USDC in under half a second. A receipt proves payment and unlocks the lines." },
 ];
 
 const FEATURES = [
-  { icon: "✍️", title: "Per-line pricing", body: "Monetize at the granular level. Readers and agents pay micro-amounts for exactly the lines they consume — from $0.00001 up." },
+  { icon: "✍️", title: "Per-line pricing", body: "Monetize at the granular level. Readers and agents pay micro-amounts for exactly the lines they consume — from $0.000001 up." },
   { icon: "🤖", title: "Agents welcome", body: "Built for the machine age. Autonomous agents discover your work and pay the required nanopayment instantly to cite it." },
   { icon: "💸", title: "Automatic 85/10/5 splits", body: "Revenue is distributed in real time: 85% to you, 10% to the platform, 5% to the referrer. Transparent and on-chain." },
 ];
@@ -17,23 +18,27 @@ export default function Home() {
   return (
     <>
       {/* Hero */}
-      <section className="px-margin-mobile py-32 text-center md:px-margin-desktop md:py-48">
+      <section className="px-margin-mobile py-24 text-center md:px-margin-desktop md:py-32">
         <div className="mx-auto max-w-4xl space-y-stack-lg">
+          <span className="inline-block rounded-full border border-outline-variant px-3 py-1 font-label-caps text-label-caps text-primary">
+            LEPTON AGENTS HACKATHON · RFB 6 — CREATOR &amp; PUBLISHER MONETIZATION
+          </span>
           <h1 className="font-display-lg text-display-lg-mobile tracking-tight md:text-display-lg">
             Get paid every time someone reads a line of your story.
           </h1>
           <p className="mx-auto max-w-2xl font-body-lg text-body-lg text-on-surface-variant">
-            Your readers pay per line — agents welcome. The next evolution of publishing, where
-            every citation is a transaction settled gas-free as USDC on Arc.
+            Your readers pay per line — agents welcome. Value too small to have been worth moving before:
+            per line, per citation, settled instantly as USDC on Arc through Circle Gateway.
           </p>
-          <div className="flex flex-col items-center justify-center gap-gutter pt-stack-lg sm:flex-row">
-            <Link href="/creators" className="btn-primary w-full px-10 py-4 !text-body-lg editorial-shadow sm:w-auto">
-              I&apos;m a writer →
+          <div className="flex flex-col items-center justify-center gap-gutter pt-stack-md sm:flex-row">
+            <Link href="/read" className="btn-primary w-full px-10 py-4 !text-body-lg editorial-shadow sm:w-auto">
+              Read &amp; pay per line →
             </Link>
             <Link href="/demo" className="btn-outline w-full px-10 py-4 !text-body-lg sm:w-auto">
               Watch an agent pay →
             </Link>
           </div>
+          <StatsBar />
         </div>
       </section>
 
@@ -92,14 +97,13 @@ export default function Home() {
       {/* Final CTA */}
       <section className="border-t border-outline-variant px-margin-mobile py-32 text-center md:px-margin-desktop">
         <div className="mx-auto max-w-2xl space-y-stack-md">
-          <h2 className="font-headline-md text-headline-md">Ready to publish on the citation web?</h2>
+          <h2 className="font-headline-md text-headline-md">Make the smallest unit sellable.</h2>
           <p className="mb-stack-lg font-body-md text-body-md text-on-surface-variant">
             Put a line behind LinePay and every reader — human or agent — pays you for it.
           </p>
-          <div className="flex justify-center pt-stack-md">
-            <Link href="/creators" className="btn-primary px-12 py-4 !text-body-lg editorial-shadow">
-              Start Writing Now
-            </Link>
+          <div className="flex justify-center gap-gutter pt-stack-md">
+            <Link href="/creators" className="btn-primary px-12 py-4 !text-body-lg editorial-shadow">Start Writing</Link>
+            <Link href="/read" className="btn-outline px-12 py-4 !text-body-lg">Start Reading</Link>
           </div>
         </div>
       </section>

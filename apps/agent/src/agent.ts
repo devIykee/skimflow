@@ -46,6 +46,8 @@ export interface ResearchResult {
   query: string;
   mode: "continue-novel" | "research";
   brain: "llm" | "heuristic";
+  /** Human-readable provider + model, e.g. "Groq · llama-3.3-70b-versatile". */
+  modelLabel: string;
   steps: AgentStep[];
   citations: Citation[];
   answer: string;
@@ -62,15 +64,34 @@ export interface RunOptions {
   buyLines?: number;
 }
 
-// ── LLM (LangChain ChatAnthropic) lazy loader ────────────────────────────────
-async function getModel() {
-  if (!process.env.ANTHROPIC_API_KEY) return null;
-  const { ChatAnthropic } = await import("@langchain/anthropic");
-  return new ChatAnthropic({
-    model: process.env.AGENT_MODEL ?? "claude-opus-4-8",
-    maxTokens: 1500,
+// ── LLM lazy loader (provider-agnostic via LangChain) ────────────────────────
+// Picks a provider by available API key, or by AGENT_PROVIDER override:
+//   - Groq      (free, fast)  → GROQ_API_KEY      [@langchain/groq]
+//   - Anthropic (Claude)      → ANTHROPIC_API_KEY [@langchain/anthropic]
+//   - none → null → deterministic heuristic brain (demo still runs offline)
+async function getModel(): Promise<{ model: any; label: string } | null> {
+  const provider = (process.env.AGENT_PROVIDER ?? "").toLowerCase();
+  const hasGroq = !!process.env.GROQ_API_KEY;
+  const hasAnthropic = !!process.env.ANTHROPIC_API_KEY;
+
+  const useGroq = provider === "groq" || (provider === "" && hasGroq);
+  const useAnthropic = provider === "anthropic" || (provider === "" && !hasGroq && hasAnthropic);
+
+  if (useGroq && hasGroq) {
+    const { ChatGroq } = await import("@langchain/groq");
+    const model = process.env.GROQ_MODEL ?? "llama-3.3-70b-versatile";
+    return {
+      model: new ChatGroq({ model, maxTokens: 1500, temperature: 0.3 }),
+      label: `Groq · ${model}`,
+    };
+  }
+  if (useAnthropic && hasAnthropic) {
+    const { ChatAnthropic } = await import("@langchain/anthropic");
+    const model = process.env.AGENT_MODEL ?? "claude-opus-4-8";
     // Opus 4.8 uses adaptive thinking; do not set temperature (rejected).
-  });
+    return { model: new ChatAnthropic({ model, maxTokens: 1500 }), label: `Claude · ${model}` };
+  }
+  return null;
 }
 
 function extractJson<T>(text: string): T | null {
@@ -102,8 +123,10 @@ export async function runResearch(query: string, opts: RunOptions = {}): Promise
   const maxCandidates = opts.maxCandidates ?? 4;
 
   const client = new X402Client(baseUrl);
-  const model = await getModel();
+  const llm = await getModel();
+  const model = llm?.model ?? null;
   const brain: "llm" | "heuristic" = model ? "llm" : "heuristic";
+  const modelLabel = llm?.label ?? "heuristic (no API key)";
 
   const steps: AgentStep[] = [];
   const citations: Citation[] = [];
@@ -117,7 +140,7 @@ export async function runResearch(query: string, opts: RunOptions = {}): Promise
     thought:
       `Goal: ${mode === "continue-novel" ? "continue a light novel" : "answer a research query"}. ` +
       `Budget ${formatUsdc(policy.budgetBaseUnits)}, max ${formatUsdc(policy.maxPricePerLine)}/line, ` +
-      `verified-only=${policy.requireVerified}. Brain=${brain}. I will discover paywalled sources, ` +
+      `verified-only=${policy.requireVerified}. Reasoning with ${modelLabel}. I will discover paywalled sources, ` +
       `read free previews, decide what's worth paying for, clear each payment through Guardian, then pay per line via x402+Gateway.`,
   });
 
@@ -247,6 +270,7 @@ export async function runResearch(query: string, opts: RunOptions = {}): Promise
     query,
     mode,
     brain,
+    modelLabel,
     steps,
     citations,
     answer,

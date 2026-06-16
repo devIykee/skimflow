@@ -11,10 +11,17 @@ export interface Creator {
   created_at: number;
 }
 
+export type ContentKind =
+  | "article"
+  | "novel_chapter"
+  | "agent-skill"
+  | "prompt-template"
+  | "knowledge-base";
+
 export interface Content {
   id: string;
   creator_id: string;
-  kind: "article" | "novel_chapter";
+  kind: ContentKind;
   title: string;
   summary: string;
   tags: string;
@@ -157,6 +164,12 @@ export function recordPayment(args: {
     )
     .run(row);
   return row;
+}
+
+/** Idempotency guard — has this on-chain tx already unlocked something? */
+export function paymentExistsByTx(txHash: string): boolean {
+  const row = db().prepare(`SELECT 1 FROM payments WHERE tx_hash = ? LIMIT 1`).get(txHash);
+  return !!row;
 }
 
 export function recentPayments(limit = 50): Array<Payment & { title: string; creator_handle: string }> {

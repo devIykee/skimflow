@@ -21,9 +21,11 @@ export async function POST(req: NextRequest) {
       ? parseUsdc(b.pricePerLine).toString()
       : parseUsdc(0.00005).toString(); // default $0.00005 / line
 
+  const ALLOWED_KINDS = ["article", "novel_chapter", "agent-skill", "prompt-template", "knowledge-base"] as const;
+  const kind = (ALLOWED_KINDS as readonly string[]).includes(b.kind) ? (b.kind as (typeof ALLOWED_KINDS)[number]) : "article";
   const content = createContent({
     creator_id: creator.id,
-    kind: b.kind === "novel_chapter" ? "novel_chapter" : "article",
+    kind,
     title: b.title,
     summary: b.summary ?? "",
     tags: Array.isArray(b.tags) ? b.tags.join(",") : b.tags ?? "",
