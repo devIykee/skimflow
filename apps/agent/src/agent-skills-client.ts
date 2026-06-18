@@ -1,15 +1,19 @@
 /**
- * Agent-skills consumer — the autonomous A2A flow against the new chunk system.
+ * Agent-skills consumer — the autonomous A2A flow against the chunk system.
  *
  *   1. Discover the payment system via /.well-known/agent-payment.json
  *   2. Fetch the free block 0 (onboarding) of a piece
- *   3. For each block 1..N: GET → 402 → pay → retry with X-Payment-Token → read
+ *   3. For each block 1..N: GET → 402 → sign an x402 USDC authorization → retry
+ *      with the `X-Payment` header → read.
  *
- * In simulate mode the token is generated locally (the server auto-approves).
- * In live mode the agent pays the gateway address in USDC on Arc (BUYER_PRIVATE_KEY)
- * and uses the tx hash as the token; the Circle webhook confirms it server-side.
+ * x402 (preferred): the 402 body carries an `accepts[]` quote. The agent signs an
+ * EIP-3009 `TransferWithAuthorization` (GatewayWalletBatched domain) for the
+ * creator's wallet and sends it base64 in `X-Payment`; the server settles it via
+ * Circle Gateway. In simulate mode the signature is empty and the server
+ * validate-and-records (no funds move). Legacy `X-Payment-Token` is used only if
+ * a server doesn't advertise `accepts[]`.
  */
-import { loadArcConfig, type Hex } from "@linepay/sdk";
+import { loadArcConfig, type Address, type Hex } from "@linepay/sdk";
 
 export interface AgentSkillsOptions {
   baseUrl: string;
@@ -21,10 +25,84 @@ export interface AgentSkillsOptions {
 export interface BlockTrace {
   blockIndex: number;
   status: "paid" | "402" | "stopped";
+  method?: "x402" | "token";
   token?: string;
   cost?: string;
   chars?: number;
   rateRemaining?: string | null;
+}
+
+/** One entry of the x402 402 `accepts[]` quote. */
+interface AcceptQuote {
+  network: string;
+  asset: Address;
+  amount: string; // USDC base units
+  payTo: Address;
+  maxTimeoutSeconds?: number;
+  extra?: { verifyingContract?: Address };
+}
+
+const SIM_FROM = "0x000000000000000000000000000000000000A9E7" as Address;
+
+/**
+ * Build the base64 `X-Payment` header: a signed (live) or empty-sig (simulate)
+ * EIP-3009 authorization toward the quote's `payTo`.
+ */
+async function buildXPayment(accept: AcceptQuote, simulate: boolean, chainId: number): Promise<string> {
+  const { randomBytes } = await import("node:crypto");
+  const nonce = ("0x" + randomBytes(32).toString("hex")) as Hex;
+  const now = Math.floor(Date.now() / 1000);
+  const validAfter = "0";
+  const validBefore = String(now + Math.max(Number(accept.maxTimeoutSeconds ?? 600), 7 * 24 * 3600 + 100));
+
+  let from: Address = (process.env.BUYER_ADDRESS ?? process.env.AGENT_WALLET_ADDRESS ?? SIM_FROM) as Address;
+  let signature: Hex | "0x" = "0x";
+
+  if (!simulate) {
+    const pk = (process.env.BUYER_PRIVATE_KEY ?? process.env.AGENT_WALLET_PRIVATE_KEY) as Hex | undefined;
+    if (!pk) throw new Error("Live mode needs BUYER_PRIVATE_KEY (a funded Arc wallet) to sign x402 payments.");
+    const { privateKeyToAccount } = await import("viem/accounts");
+    const account = privateKeyToAccount(pk);
+    from = account.address;
+    signature = await account.signTypedData({
+      domain: {
+        name: "GatewayWalletBatched",
+        version: "1",
+        chainId,
+        verifyingContract: (accept.extra?.verifyingContract ?? accept.asset) as Address,
+      },
+      types: {
+        TransferWithAuthorization: [
+          { name: "from", type: "address" },
+          { name: "to", type: "address" },
+          { name: "value", type: "uint256" },
+          { name: "validAfter", type: "uint256" },
+          { name: "validBefore", type: "uint256" },
+          { name: "nonce", type: "bytes32" },
+        ],
+      },
+      primaryType: "TransferWithAuthorization",
+      message: {
+        from,
+        to: accept.payTo,
+        value: BigInt(accept.amount),
+        validAfter: 0n,
+        validBefore: BigInt(validBefore),
+        nonce,
+      },
+    });
+  }
+
+  const payload = {
+    x402Version: 2,
+    scheme: "exact",
+    network: accept.network,
+    payload: {
+      authorization: { from, to: accept.payTo, value: accept.amount, validAfter, validBefore, nonce },
+      signature,
+    },
+  };
+  return Buffer.from(JSON.stringify(payload), "utf8").toString("base64");
 }
 
 export interface AgentSkillsResult {
@@ -51,22 +129,24 @@ async function pay(cost: string, gateway: string, simulate: boolean): Promise<st
   if (!privateKey) {
     throw new Error("Live mode needs BUYER_PRIVATE_KEY (a funded Arc testnet wallet) to pay.");
   }
-  const { createWalletClient, http, parseUnits, erc20Abi, getAddress } = await import("viem");
+  const { createWalletClient, defineChain, http, parseUnits, erc20Abi, getAddress } = await import("viem");
   const { privateKeyToAccount } = await import("viem/accounts");
   const arc = loadArcConfig();
   const account = privateKeyToAccount(privateKey);
-  const chain = {
+  const chain = defineChain({
     id: arc.chainId,
     name: "Arc Testnet",
     nativeCurrency: { name: "USDC", symbol: "USDC", decimals: 18 },
     rpcUrls: { default: { http: [arc.rpcUrl] } },
-  } as const;
-  const wallet = createWalletClient({ account, chain: chain as never, transport: http(arc.rpcUrl) });
+  });
+  const wallet = createWalletClient({ account, chain, transport: http(arc.rpcUrl) });
   const hash = await wallet.writeContract({
     address: getAddress(arc.usdcAddress),
     abi: erc20Abi,
     functionName: "transfer",
     args: [getAddress(gateway), parseUnits(cost, 6)],
+    account,
+    chain,
   });
   return hash;
 }
@@ -74,6 +154,7 @@ async function pay(cost: string, gateway: string, simulate: boolean): Promise<st
 export async function runAgentSkills(opts: AgentSkillsOptions): Promise<AgentSkillsResult> {
   const { baseUrl, slug, simulate } = opts;
   const maxBlocks = opts.maxBlocks ?? 50;
+  const chainId = loadArcConfig().chainId;
 
   // 1. Discover
   let discovery: Record<string, unknown> | null = null;
@@ -102,21 +183,42 @@ export async function runAgentSkills(opts: AgentSkillsOptions): Promise<AgentSki
       blocks.push({ blockIndex: i, status: "stopped" });
       break;
     }
-    const quote = (await unpaid.json()) as { cost_per_block: string; payment_gateway: string };
-    const token = await pay(quote.cost_per_block, quote.payment_gateway, simulate);
+    const quote = (await unpaid.json()) as {
+      cost_per_block: string;
+      payment_gateway?: string;
+      accepts?: AcceptQuote[];
+    };
+    const cost = quote.cost_per_block;
+    const accept = quote.accepts?.[0];
 
-    const paid = await fetch(agentUrl(baseUrl, slug, i), { headers: { "X-Payment-Token": token } });
+    let paid: Response;
+    let method: "x402" | "token";
+    let token: string | undefined;
+
+    if (accept) {
+      // x402: sign a USDC authorization and pay machine-to-machine.
+      method = "x402";
+      const xPayment = await buildXPayment(accept, simulate, chainId);
+      paid = await fetch(agentUrl(baseUrl, slug, i), { headers: { "X-Payment": xPayment } });
+    } else {
+      // Legacy fallback: opaque payment token.
+      method = "token";
+      token = await pay(cost, quote.payment_gateway ?? "", simulate);
+      paid = await fetch(agentUrl(baseUrl, slug, i), { headers: { "X-Payment-Token": token } });
+    }
+
     if (!paid.ok) {
-      blocks.push({ blockIndex: i, status: "402", token, cost: quote.cost_per_block });
+      blocks.push({ blockIndex: i, status: "402", method, token, cost });
       break;
     }
     const text = await paid.text();
-    spentUnits += Math.round(Number(quote.cost_per_block) * 1e6);
+    spentUnits += Math.round(Number(cost) * 1e6);
     blocks.push({
       blockIndex: i,
       status: "paid",
+      method,
       token,
-      cost: quote.cost_per_block,
+      cost,
       chars: text.length,
       rateRemaining: paid.headers.get("x-ratelimit-remaining"),
     });

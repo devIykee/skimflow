@@ -32,6 +32,7 @@ export default async function ReaderPage({ params }: { params: Promise<{ slug: s
       creatorHandle={content.creator_handle}
       contentType={content.content_type}
       pricePerBlock={content.price_per_block}
+      verifiedSource={content.ownership_verified ? (content.source_platform ?? "source") : null}
       agentUrl={content.content_type === "agent-skills" ? `/read/${content.slug}/agent-skills.md` : null}
       chunks={chunks.map((c) => ({
         id: c.id,

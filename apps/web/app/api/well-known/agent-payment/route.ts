@@ -14,20 +14,33 @@ export async function GET() {
   const costPerBlock = process.env.DEFAULT_PRICE_PER_BLOCK || "0.05";
 
   const manifest = {
-    version: "1.0",
-    payment_protocol: "circle-gateway-eip3009",
+    version: "1.1",
+    // Primary protocol: x402 (HTTP 402 + X-Payment) settled over Circle Gateway.
+    payment_protocol: "x402",
+    settlement: "circle-gateway-eip3009",
+    network: "eip155:5042002",
     currency: "USDC",
+    usdc_address: process.env.NEXT_PUBLIC_USDC_ADDRESS || "0x3600000000000000000000000000000000000000",
+    // Gateway = EIP-712 verifyingContract for the GatewayWalletBatched authorization.
     gateway_address: gateway,
+    payment: {
+      header: "X-Payment", // base64 { x402Version, payload: { authorization, signature } }
+      response_header: "X-Payment-Response",
+      eip712_domain: { name: "GatewayWalletBatched", version: "1", chainId: 5042002, verifyingContract: gateway },
+      legacy_header: "X-Payment-Token", // still accepted
+    },
     content_endpoints: [
       {
         type: "agent-skills",
         url_pattern: "/read/{slug}/agent-skills.md",
         free_block: 0,
         cost_per_block: costPerBlock,
-        auth_header: "X-Payment-Token",
+        payment_header: "X-Payment",
+        auth_header: "X-Payment-Token", // legacy fallback
       },
     ],
-    marketplace: "/marketplace",
+    feed: "/for-you",
+    marketplace: "/for-you", // back-compat alias (the feed was formerly "/marketplace")
     docs: "/read/agent-skills.md",
   };
 

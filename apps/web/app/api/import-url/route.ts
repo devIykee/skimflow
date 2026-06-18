@@ -4,6 +4,7 @@ import { Readability } from "@mozilla/readability";
 import TurndownService from "turndown";
 import { requireUser, errorResponse } from "@/lib/session";
 import { envLimit, rateLimit, rateLimitResponse, clientIp } from "@/lib/rate-limit";
+import { detectPlatform } from "@/lib/ownership";
 
 export const runtime = "nodejs";
 
@@ -91,6 +92,8 @@ export async function POST(req: NextRequest) {
     }
     const text = new TextDecoder().decode(buf);
 
+    const source = detectPlatform(target.toString());
+
     // Raw markdown path.
     if (isRawMarkdown(target)) {
       const fallback = target.pathname.split("/").pop() ?? "Imported document";
@@ -98,6 +101,9 @@ export async function POST(req: NextRequest) {
         title: titleFromMarkdown(text, fallback.replace(/\.(md|markdown)$/i, "")),
         content: text,
         format: "markdown",
+        sourceUrl: target.toString(),
+        sourcePlatform: source.platform,
+        authorHandle: source.authorHandle,
       });
     }
 
@@ -114,6 +120,9 @@ export async function POST(req: NextRequest) {
       title: (article.title ?? dom.window.document.title ?? "Imported article").trim(),
       content: markdown,
       format: "article",
+      sourceUrl: target.toString(),
+      sourcePlatform: source.platform,
+      authorHandle: source.authorHandle,
     });
   } catch (e) {
     return errorResponse(e);

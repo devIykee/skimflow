@@ -24,6 +24,8 @@ export interface User {
   handle: string | null;
   display_name: string | null;
   verified: boolean;
+  github_username: string | null;
+  verify_code: string | null;
   suspended: boolean;
   last_active_at: Date | null;
   created_at: Date;
@@ -44,6 +46,10 @@ export interface Content {
   suspended_reason: string | null;
   block_count: number;
   view_count: number;
+  source_url: string | null;
+  source_platform: string | null;
+  ownership_verified: boolean;
+  verified_via: string | null;
   published_at: Date | null;
   created_at: Date;
   updated_at: Date;
@@ -69,11 +75,27 @@ export interface LedgerRow {
   platform_amount: string;
   referrer_amount: string;
   referrer_id: string | null;
+  reserve_amount: string;
+  pay_session_id: string | null;
   payment_token: string | null;
   tx_hash: string | null;
   status: LedgerStatus;
   created_at: Date;
   completed_at: Date | null;
+}
+
+/** Session-key authorization for silent chunk payments (see migration 0003). */
+export type PaySessionStatus = "active" | "revoked" | "expired";
+export interface PaySessionRow {
+  id: string;
+  main_wallet: string;
+  session_address: string;
+  cap: string;
+  spent: string;
+  status: PaySessionStatus;
+  created_at: Date;
+  expires_at: Date | null;
+  revoked_at: Date | null;
 }
 
 /** A ledger row joined with its content + creator for human-readable admin views. */

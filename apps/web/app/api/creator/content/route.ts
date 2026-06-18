@@ -7,12 +7,14 @@ import {
 import {
   createContent,
   creatorPublishedCount,
+  getOrCreateVerifyCode,
   listContentByCreator,
   recordAdminEvent,
 } from "@/lib/store";
 import { chunkContent } from "@/lib/chunk-content";
 import { normalizeUsdc } from "@/lib/money";
 import { notifyFirstPublish } from "@/lib/email";
+import { detectPlatform, verifyOwnership } from "@/lib/ownership";
 import type { ContentType } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -53,6 +55,7 @@ export async function POST(req: NextRequest) {
       summary?: string;
       tags?: string;
       status?: "draft" | "published";
+      sourceUrl?: string;
     };
 
     if (!body.title?.trim()) return Response.json({ error: "missing_title" }, { status: 400 });
@@ -86,6 +89,25 @@ export async function POST(req: NextRequest) {
     const status = body.status === "published" ? "published" : "draft";
     const isFirstPublish = status === "published" && (await creatorPublishedCount(user.id)) === 0;
 
+    // Ownership verification: if this piece was imported, RE-VERIFY server-side
+    // (never trust a client flag) and record the verdict on the content.
+    let sourceUrl: string | null = null;
+    let sourcePlatform: string | null = null;
+    let ownershipVerified = false;
+    let verifiedVia: string | null = null;
+    if (body.sourceUrl && typeof body.sourceUrl === "string") {
+      sourceUrl = body.sourceUrl;
+      sourcePlatform = detectPlatform(sourceUrl).platform;
+      try {
+        const verifyCode = await getOrCreateVerifyCode(user.id);
+        const v = await verifyOwnership({ url: sourceUrl, githubUsername: user.github_username, verifyCode });
+        ownershipVerified = v.verified;
+        verifiedVia = v.via;
+      } catch {
+        /* verification best-effort — publish proceeds unverified */
+      }
+    }
+
     const content = await createContent({
       creatorId: user.id,
       slug: slugify(body.title),
@@ -99,6 +121,10 @@ export async function POST(req: NextRequest) {
       chunks: toStore,
       firstBlockIndex,
       status,
+      sourceUrl,
+      sourcePlatform,
+      ownershipVerified,
+      verifiedVia,
     });
 
     const base = appUrl(req);

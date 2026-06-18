@@ -28,8 +28,8 @@ export default function Home() {
             per line, per citation, settled instantly as USDC on Arc through Circle Gateway.
           </p>
           <div className="flex flex-col items-center justify-center gap-gutter pt-stack-md sm:flex-row">
-            <Link href="/marketplace" className="btn-primary w-full px-10 py-4 !text-body-lg editorial-shadow sm:w-auto">
-              Browse the marketplace →
+            <Link href="/for-you" className="btn-primary w-full px-10 py-4 !text-body-lg editorial-shadow sm:w-auto">
+              Browse the feed →
             </Link>
             <Link href="/dashboard" className="btn-outline w-full px-10 py-4 !text-body-lg sm:w-auto">
               Start publishing →
@@ -100,7 +100,7 @@ export default function Home() {
           </p>
           <div className="flex justify-center gap-gutter pt-stack-md">
             <Link href="/dashboard" className="btn-primary px-12 py-4 !text-body-lg editorial-shadow">Start Writing</Link>
-            <Link href="/marketplace" className="btn-outline px-12 py-4 !text-body-lg">Start Reading</Link>
+            <Link href="/for-you" className="btn-outline px-12 py-4 !text-body-lg">Start Reading</Link>
           </div>
         </div>
       </section>

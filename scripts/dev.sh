@@ -37,12 +37,21 @@ WEB_ENV="apps/web/.env.local"
 
 echo "▸ LinePay Cite — one-command start"
 
-# ── 1. Env files (never clobber an existing apps/web/.env.local) ─────────────
-if [ ! -f "$WEB_ENV" ]; then
-  if [ -f .env ]; then cp .env "$WEB_ENV"; else cp .env.example "$WEB_ENV"; fi
-  echo "  created $WEB_ENV"
-fi
+# ── 1. Env: ONE canonical file at repo-root .env. apps/web/.env.local is a
+#         symlink to it, so Next.js (web), Hardhat (../.env), and the scripts
+#         all read the same single file. ──────────────────────────────────────
 [ -f .env ] || cp .env.example .env
+if [ -L "$WEB_ENV" ]; then
+  :  # already the symlink we want
+elif [ -f "$WEB_ENV" ]; then
+  # A stray real file from before the single-file migration — preserve, relink.
+  echo "  ⚠ $WEB_ENV is a real file; backing up to ${WEB_ENV}.bak and linking to root .env"
+  mv "$WEB_ENV" "${WEB_ENV}.bak"
+  ln -s ../../.env "$WEB_ENV"
+else
+  ln -s ../../.env "$WEB_ENV"
+  echo "  linked $WEB_ENV → root .env (single env file)"
+fi
 
 # Read a var from process env, then apps/web/.env.local, then .env.
 get_env() {
@@ -92,9 +101,9 @@ if [ -z "$DB_URL" ]; then
       [ "$i" -eq 30 ] && { echo " timeout"; exit 1; }
     done
     DB_URL="postgres://postgres:postgres@localhost:5432/linepay"
-    ensure_line "$WEB_ENV" DATABASE_URL "$DB_URL"
-    ensure_line "$WEB_ENV" PGSSL "disable"
+    # Single canonical file; $WEB_ENV is a symlink to it.
     ensure_line .env DATABASE_URL "$DB_URL"
+    ensure_line .env PGSSL "disable"
   else
     echo "✗ DATABASE_URL is not set and Docker is unavailable."
     echo "  Set DATABASE_URL in $WEB_ENV (e.g. a Supabase Session pooler URL) and re-run."
@@ -158,7 +167,7 @@ cat <<EOF
 
 ✅ Running. (Ctrl-C here stops the server.)
    • Landing        $URL
-   • Marketplace    $URL/marketplace
+   • For You feed   $URL/for-you
    • Creator portal $URL/dashboard      (sign in with Google/GitHub)
    • Admin          $URL/admin          (sign in as ADMIN_EMAIL)
    • Docs           $URL/docs

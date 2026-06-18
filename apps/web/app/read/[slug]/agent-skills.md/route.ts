@@ -4,21 +4,21 @@ import {
   getChunk,
   getContentWithCreator,
   getLedgerByToken,
+  getUserById,
   insertLedger,
 } from "@/lib/store";
-import {
-  buildBlock0,
-  gatewayAddressFor,
-  paymentRequiredBody,
-} from "@/lib/agent-skills";
+import { buildBlock0, gatewayAddressFor } from "@/lib/agent-skills";
 import {
   deriveAgentIdentity,
   ensureAgentSession,
   record402Hit,
   recordAgentUnlock,
 } from "@/lib/agent-session";
+import { withGateway } from "@/lib/x402-gateway";
+import { validateWallet } from "@/lib/validate-wallet";
 import { splitPayment } from "@/lib/split-payment";
 import { getReferrerId, persistReferral } from "@/lib/referral";
+import type { Address } from "viem";
 import {
   envLimit,
   rateLimit,
@@ -124,54 +124,89 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ slug: strin
   const chunk = await getChunk(content.id, blockIndex);
   if (!chunk) return json({ error: "block_not_found", block_index: blockIndex }, 404, rl);
 
-  const token = req.headers.get("x-payment-token");
-  if (!token) {
-    await record402Hit(id, content.id, blockIndex);
-    return json(
-      paymentRequiredBody({ blockIndex, gatewayAddress: gateway, costPerBlock: content.price_per_block }),
-      402,
-      rl
-    );
-  }
-
-  // Valid token present → optimistic serve. Idempotent on the token.
   const simulate = (process.env.PAYMENTS_MODE ?? "simulate").toLowerCase() !== "live";
-  let ledger = await getLedgerByToken(token);
-  if (!ledger) {
-    const referrerId = getReferrerId(req);
-    const split = splitPayment({ total: content.price_per_block, hasReferrer: !!referrerId });
-    ledger = await insertLedger({
-      contentId: content.id,
-      creatorId: content.creator_id,
-      payerId: id.payerId,
-      payerKind: "agent",
-      blockIndex,
-      grossAmount: split.gross,
-      creatorAmount: split.creatorAmount,
-      platformAmount: split.platformAmount,
-      referrerAmount: split.referrerAmount,
-      referrerId,
-      paymentToken: token,
-      status: simulate ? "completed" : "pending",
-    });
-    await recordAgentUnlock(id, content.id, blockIndex, split.gross);
-    // In simulate mode the credit is final now → email immediately (async).
-    // In live mode the Circle webhook fires the email on payment.confirmed.
-    if (simulate) {
-      void sendEarningNotification({
+  const xPayment = req.headers.get("x-payment");
+  const token = req.headers.get("x-payment-token");
+
+  // Shared: record an agent unlock + email on first credit for this payment.
+  const serveBlock = async (
+    paymentToken: string,
+    payerId: string,
+    txHash: string | null,
+    status: "completed" | "pending"
+  ): Promise<Response> => {
+    let ledger = await getLedgerByToken(paymentToken);
+    if (!ledger) {
+      const referrerId = getReferrerId(req);
+      const split = splitPayment({ total: content.price_per_block, hasReferrer: !!referrerId });
+      ledger = await insertLedger({
+        contentId: content.id,
         creatorId: content.creator_id,
-        contentTitle: content.title,
+        payerId,
+        payerKind: "agent",
         blockIndex,
-        gross: split.gross,
-        creatorCut: split.creatorAmount,
+        grossAmount: split.gross,
+        creatorAmount: split.creatorAmount,
+        platformAmount: split.platformAmount,
+        referrerAmount: split.referrerAmount,
+        reserveAmount: split.reserveAmount,
+        referrerId,
+        paymentToken,
+        txHash,
+        status,
       });
+      await recordAgentUnlock(id, content.id, blockIndex, split.gross);
+      if (status === "completed") {
+        void sendEarningNotification({
+          creatorId: content.creator_id,
+          contentTitle: content.title,
+          blockIndex,
+          gross: split.gross,
+          creatorCut: split.creatorAmount,
+        });
+      }
     }
+    const res = markdown(`<!-- block ${blockIndex} of ${content.title} -->\n\n${chunk.text}\n`, 200, rl, {
+      "X-Payment-Status": ledger.status,
+      "X-Block-Index": String(blockIndex),
+    });
+    persistReferral(req, res);
+    return res;
+  };
+
+  // ── Legacy path: opaque X-Payment-Token (kept for back-compat) ─────────────
+  // Only when the agent did NOT send a real x402 `X-Payment` authorization.
+  if (token && !xPayment) {
+    return serveBlock(token, id.payerId, null, simulate ? "completed" : "pending");
   }
 
-  const res = markdown(`<!-- block ${blockIndex} of ${content.title} -->\n\n${chunk.text}\n`, 200, rl, {
-    "X-Payment-Status": ledger.status,
-    "X-Block-Index": String(blockIndex),
-  });
-  persistReferral(req, res);
-  return res;
+  // ── x402 path: real signed USDC payment via Circle Gateway ─────────────────
+  const creator = await getUserById(content.creator_id);
+  const payTo = (validateWallet(creator?.wallet_address).checksummed ?? BURN) as Address;
+  const resource = `${baseUrl}/read/${content.slug}/agent-skills.md?block=${blockIndex}`;
+
+  if (!xPayment) await record402Hit(id, content.id, blockIndex);
+
+  return withGateway(
+    req,
+    {
+      price: content.price_per_block,
+      payTo,
+      resource,
+      description: `Unlock block ${blockIndex} of "${content.title}" — ${content.price_per_block} USDC.`,
+      blockIndex,
+      extraHeaders: rateLimitHeaders(rl),
+    },
+    // withGateway only invokes onPaid AFTER Circle confirms settlement, so the
+    // payment is final here (live or simulate) — record it completed.
+    (receipt) =>
+      serveBlock(
+        receipt.txHash,
+        receipt.payer,
+        receipt.simulated ? null : receipt.txHash,
+        "completed"
+      )
+  );
 }
+
+const BURN = "0x000000000000000000000000000000000000dEaD" as Address;

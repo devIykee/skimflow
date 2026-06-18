@@ -1,0 +1,88 @@
+import { NextRequest } from "next/server";
+import { getAddress, verifyMessage } from "viem";
+import type { Address, Hex } from "viem";
+import { createPaySession } from "@/lib/store";
+import { validateWallet } from "@/lib/validate-wallet";
+import { normalizeUsdc } from "@/lib/money";
+import { paySessionAuthMessage } from "@/lib/burn-intent";
+import { relayerRecipient } from "@/lib/gateway-relayer";
+import { PAY_SESSION_COOKIE, signPaySession } from "@/lib/session-key";
+
+export const runtime = "nodejs";
+
+/**
+ * POST /api/pay-session/init — open a silent-payment session.
+ *
+ * The browser sends the connected main wallet, its locally-generated session
+ * key address, a spend cap, and a signature from the main wallet over the
+ * canonical authorization message (proves wallet ownership + binds the key/cap).
+ * We persist the session, then set a signed httpOnly cookie the reader route
+ * trusts. In live mode the real on-chain `addDelegate` + deposit are done by
+ * the client before calling this; here we only record the authorization.
+ */
+export async function POST(req: NextRequest) {
+  try {
+    const body = (await req.json().catch(() => ({}))) as {
+      mainWallet?: string;
+      sessionAddress?: string;
+      cap?: string | number;
+      signature?: Hex;
+    };
+
+    const mainCheck = validateWallet(body.mainWallet);
+    if (!mainCheck.valid || !mainCheck.checksummed)
+      return Response.json({ error: "bad_main_wallet", friendly: mainCheck.error }, { status: 400 });
+    const sessCheck = validateWallet(body.sessionAddress);
+    if (!sessCheck.valid || !sessCheck.checksummed)
+      return Response.json({ error: "bad_session_address" }, { status: 400 });
+
+    let cap: string;
+    try {
+      cap = normalizeUsdc(body.cap ?? "");
+    } catch {
+      return Response.json({ error: "bad_cap", friendly: "Enter a valid spend cap." }, { status: 400 });
+    }
+    if (Number(cap) <= 0) return Response.json({ error: "bad_cap", friendly: "Cap must be greater than 0." }, { status: 400 });
+
+    const mainWallet = mainCheck.checksummed as Address;
+    const sessionAddress = sessCheck.checksummed as Address;
+
+    // Verify the one-time ownership signature over the bound message.
+    const message = paySessionAuthMessage({ mainWallet, sessionAddress, cap });
+    if (!body.signature) return Response.json({ error: "missing_signature" }, { status: 400 });
+    let valid = false;
+    try {
+      valid = await verifyMessage({ address: mainWallet, message, signature: body.signature });
+    } catch {
+      valid = false;
+    }
+    if (!valid)
+      return Response.json({ error: "bad_signature", friendly: "Authorization signature didn't verify." }, { status: 401 });
+
+    const session = await createPaySession({ mainWallet, sessionAddress, cap });
+    const token = await signPaySession({
+      sessionId: session.id,
+      mainWallet,
+      sessionAddress,
+      cap,
+    });
+
+    const res = Response.json({
+      ok: true,
+      sessionId: session.id,
+      sessionAddress,
+      mainWallet,
+      cap,
+      spent: session.spent,
+      remaining: cap,
+      recipient: getAddress(relayerRecipient()),
+    });
+    res.headers.append(
+      "Set-Cookie",
+      `${PAY_SESSION_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000`
+    );
+    return res;
+  } catch (e) {
+    return Response.json({ error: "init_failed", detail: String((e as Error)?.message ?? e) }, { status: 500 });
+  }
+}

@@ -3,18 +3,28 @@ import { toBaseUnits, toDecimal } from "./money.js";
 /**
  * Server-side revenue split. NEVER trust the client for these numbers.
  *
- * Rates come from env (decimals, not percentages):
- *   PLATFORM_FEE_RATE  default 0.10
- *   REFERRER_FEE_RATE  default 0.05  (applied only when a referrer is present)
+ * These shares MIRROR the deployed on-chain RevenueSplit contract
+ * (REVENUE_SPLIT_ADDRESS, Arc testnet) so the off-chain ledger reconciles
+ * exactly with what `split(creator, referrer, amount)` does on-chain:
  *
- * There is deliberately NO CREATOR_FEE_RATE: the creator's cut is ALWAYS the
- * remainder (gross − platform − referrer), so the three shares can never
- * silently fail to sum to the gross. All math is done in integer base units
- * (bigint) so the parts reconcile exactly to the gross with no float dust.
+ *   creator   80%   (the REMAINDER — gets any rounding dust, never under-pays)
+ *   platform  12%
+ *   referrer   5%   (paid only when a referrer is present)
+ *   reserve    3%   (owner-drainable pool held by the contract)
  *
- *   With referrer:   creator 85% / platform 10% / referrer 5%
- *   Without referrer: creator 90% / platform 10%
+ * A missing referrer folds the 5% into the reserve (matching the contract's
+ * `referrer == address(0)` branch), so a no-referrer payment is 80/12/0/8.
+ * All math is in integer base units (bigint) — the four parts always sum to
+ * the gross with no float dust.
  */
+export const SPLIT_BPS = {
+  platform: 1200, // 12%
+  referrer: 500, //  5%
+  reserve: 300, //  3%
+  // creator is the remainder (≈8000 bps / 80%)
+  total: 10000,
+} as const;
+
 export interface SplitInput {
   /** Gross payment as decimal USDC ("0.05") or base units (bigint). */
   total: string | number | bigint;
@@ -28,55 +38,42 @@ export interface PaymentSplit {
   creatorAmount: string;
   platformAmount: string;
   referrerAmount: string;
+  reserveAmount: string;
   /** Rates actually applied (for display/audit). */
   platformRate: number;
   referrerRate: number;
+  reserveRate: number;
   /** Exact base-unit values, for the on-chain / Gateway layer. */
-  base: { gross: bigint; creator: bigint; platform: bigint; referrer: bigint };
+  base: { gross: bigint; creator: bigint; platform: bigint; referrer: bigint; reserve: bigint };
 }
 
-function readRate(raw: string | undefined, fallback: number, label: string): number {
-  if (raw === undefined || raw.trim() === "") return fallback;
-  const n = Number(raw);
-  if (!Number.isFinite(n) || n < 0 || n >= 1) {
-    throw new Error(`${label} must be a decimal in [0, 1); got ${JSON.stringify(raw)}`);
-  }
-  return n;
-}
+const BPS = BigInt(SPLIT_BPS.total);
 
-/** Convert a fractional rate (0.10) to parts-per-million for integer math. */
-function rateToPpm(rate: number): bigint {
-  return BigInt(Math.round(rate * 1_000_000));
-}
-
-const PPM = 1_000_000n;
-
-/** Compute the split. Pure given env; reads PLATFORM_FEE_RATE / REFERRER_FEE_RATE. */
+/** Compute the split exactly as the on-chain RevenueSplit contract does. */
 export function splitPayment(input: SplitInput): PaymentSplit {
-  const platformRate = readRate(process.env.PLATFORM_FEE_RATE, 0.1, "PLATFORM_FEE_RATE");
-  const referrerRate = input.hasReferrer
-    ? readRate(process.env.REFERRER_FEE_RATE, 0.05, "REFERRER_FEE_RATE")
-    : 0;
-
-  if (platformRate + referrerRate >= 1) {
-    throw new Error(
-      `PLATFORM_FEE_RATE (${platformRate}) + REFERRER_FEE_RATE (${referrerRate}) must be < 1`
-    );
-  }
-
   const gross = toBaseUnits(input.total);
-  const platform = (gross * rateToPpm(platformRate)) / PPM;
-  const referrer = input.hasReferrer ? (gross * rateToPpm(referrerRate)) / PPM : 0n;
-  const creator = gross - platform - referrer; // remainder — always reconciles
+
+  const platform = (gross * BigInt(SPLIT_BPS.platform)) / BPS;
+  const referrerShare = (gross * BigInt(SPLIT_BPS.referrer)) / BPS;
+  let reserve = (gross * BigInt(SPLIT_BPS.reserve)) / BPS;
+
+  // No referrer → fold the referrer share into the reserve (contract behaviour).
+  const referrer = input.hasReferrer ? referrerShare : 0n;
+  if (!input.hasReferrer) reserve += referrerShare;
+
+  // Creator is the remainder so the four parts always reconcile to the gross.
+  const creator = gross - platform - referrer - reserve;
 
   return {
     gross: toDecimal(gross),
     creatorAmount: toDecimal(creator),
     platformAmount: toDecimal(platform),
     referrerAmount: toDecimal(referrer),
-    platformRate,
-    referrerRate,
-    base: { gross, creator, platform, referrer },
+    reserveAmount: toDecimal(reserve),
+    platformRate: SPLIT_BPS.platform / SPLIT_BPS.total,
+    referrerRate: (input.hasReferrer ? SPLIT_BPS.referrer : 0) / SPLIT_BPS.total,
+    reserveRate: (input.hasReferrer ? SPLIT_BPS.reserve : SPLIT_BPS.reserve + SPLIT_BPS.referrer) / SPLIT_BPS.total,
+    base: { gross, creator, platform, referrer, reserve },
   };
 }
 
@@ -93,6 +90,7 @@ export function previewSplit(pricePerBlock: string | number, hasReferrer: boolea
     creator: { amount: split.creatorAmount, pct: pct(split.base.creator) },
     platform: { amount: split.platformAmount, pct: pct(split.base.platform) },
     referrer: { amount: split.referrerAmount, pct: pct(split.base.referrer) },
+    reserve: { amount: split.reserveAmount, pct: pct(split.base.reserve) },
     hasReferrer,
   };
 }

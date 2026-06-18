@@ -80,14 +80,42 @@ PAYMENTS_MODE=simulate
 | `ARC_NETWORK_CAIP2` | `eip155:5042002` |
 | `USDC_ADDRESS` | `0x3600…0000` (Arc testnet USDC, 6 decimals) |
 
-### 1.5 Revenue split (defaults give 85 / 10 / 5)
+### 1.5 Revenue split (mirrors the on-chain RevenueSplit contract)
 
-| Variable | Default | Notes |
-|---|---|---|
-| `PLATFORM_FEE_RATE` | `0.10` | Platform cut. |
-| `REFERRER_FEE_RATE` | `0.05` | Referrer cut (only when a referrer is present). |
+The off-chain ledger and the deployed `RevenueSplit` contract use the **same**
+fixed split: **creator 80% / platform 12% / referrer 5% / reserve 3%**. With no
+referrer the 5% folds into the reserve (→ **80 / 12 / 0 / 8**). The creator's
+share is always the remainder, so the four parts reconcile exactly.
 
-There is **no `CREATOR_FEE_RATE`** — the creator's share is always the remainder.
+These percentages are fixed in `lib/split-payment.ts` to match the contract —
+the old `PLATFORM_FEE_RATE` / `REFERRER_FEE_RATE` env vars are **no longer read**.
+
+| Variable | Secret | Default | Notes |
+|---|---|---|---|
+| `REVENUE_SPLIT_ADDRESS` | | — | Deployed `RevenueSplit` on Arc. Required for live settlement. |
+
+### 1.5b Silent session payments (Phase 2 — `PAYMENTS_MODE=live`)
+
+Lets readers sign **once** to authorize a local session key, then unlock every
+following block with **no wallet popup**. Simulate mode needs none of the below
+— the full popup-free UX works with no funds. For real settlement:
+
+| Variable | Secret | Default | Notes |
+|---|---|---|---|
+| `RELAYER_PRIVATE_KEY` | 🔒 | — | Server EOA that calls `gatewayMint()` then `RevenueSplit.split()` per payment. Must hold test USDC on Arc (gas + a small fee float). Never a CLI flag, never logged. |
+| `RELAYER_ADDRESS` | | derived from key | Recipient of the minted USDC; auto-derived from `RELAYER_PRIVATE_KEY` when unset. |
+| `GATEWAY_MAX_FEE` | | `0` | Max Gateway fee (USDC base units) per burn; `0` for intra-Arc. |
+| `NEXT_PUBLIC_PAYMENTS_MODE` | | `simulate` | Set `live` so the browser runs the on-chain deposit + `addDelegate` setup. |
+| `NEXT_PUBLIC_GATEWAY_WALLET_ADDRESS` | | `0x0077777d…A19B9` | Gateway Wallet (deposit + delegate). |
+| `NEXT_PUBLIC_GATEWAY_MINTER_ADDRESS` | | `0x0022222A…475B` | Gateway Minter (`gatewayMint`). |
+| `NEXT_PUBLIC_ARC_GATEWAY_DOMAIN` | | `26` | Arc testnet Gateway/CCTP domain. |
+
+**Live flow per unlock:** the session key silently signs a Gateway `BurnIntent`
+→ the server verifies it + charges the cap → submits the burn (debits the
+reader's unified balance) → the reader unlocks immediately → in the background
+the relayer mints the USDC on Arc and calls `RevenueSplit.split(creator,
+referrer, amount)`, flipping the ledger row `pending → completed`. Fund both the
+**relayer** and each test **reader** wallet at <https://faucet.circle.com>.
 
 ### 1.6 Email (optional — without it, emails are silently skipped)
 

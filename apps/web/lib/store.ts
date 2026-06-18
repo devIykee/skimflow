@@ -16,6 +16,7 @@ import type {
   LedgerRowEnriched,
   LedgerStatus,
   PayerKind,
+  PaySessionRow,
   Payout,
   User,
   UserRole,
@@ -45,6 +46,8 @@ export interface OAuthProfile {
   name?: string | null;
   avatar?: string | null;
   provider?: string | null;
+  /** GitHub login (username) — used to verify ownership of GitHub imports. */
+  githubUsername?: string | null;
 }
 
 /**
@@ -63,13 +66,14 @@ export async function upsertUserFromOAuth(
   const displayName = profile.name ?? base;
 
   const row = await queryOne<User & { xmax: string }>(
-    `INSERT INTO users (email, name, avatar, provider, role, handle, display_name, last_active_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+    `INSERT INTO users (email, name, avatar, provider, role, handle, display_name, github_username, last_active_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $9, NOW())
      ON CONFLICT (email) DO UPDATE SET
        name = EXCLUDED.name,
        avatar = EXCLUDED.avatar,
        provider = EXCLUDED.provider,
        display_name = COALESCE(users.display_name, EXCLUDED.display_name),
+       github_username = COALESCE(EXCLUDED.github_username, users.github_username),
        last_active_at = NOW(),
        role = CASE WHEN $8 OR users.role = 'admin' THEN 'admin' ELSE users.role END
      RETURNING *, (xmax = 0) AS xmax`,
@@ -82,6 +86,7 @@ export async function upsertUserFromOAuth(
       candidateHandle,
       displayName,
       isAdmin,
+      profile.githubUsername ?? null,
     ]
   );
   if (!row) throw new Error("user upsert failed");
@@ -89,6 +94,24 @@ export async function upsertUserFromOAuth(
   const isNew = String((row as unknown as { xmax: boolean }).xmax) === "true";
   const { xmax: _ignore, ...user } = row as User & { xmax: unknown };
   return { user: user as User, isNew };
+}
+
+/**
+ * Return the user's bio-verification code, generating + persisting one on first
+ * use. The code is what creators paste into their X/Substack/Medium bio.
+ */
+export async function getOrCreateVerifyCode(userId: string): Promise<string> {
+  const existing = await queryOne<{ verify_code: string | null }>(
+    `SELECT verify_code FROM users WHERE id = $1`,
+    [userId]
+  );
+  if (existing?.verify_code) return existing.verify_code;
+  const code = `linepay-verify-${process.hrtime.bigint().toString(36).slice(-10)}`;
+  const row = await queryOne<{ verify_code: string }>(
+    `UPDATE users SET verify_code = COALESCE(verify_code, $2) WHERE id = $1 RETURNING verify_code`,
+    [userId, code]
+  );
+  return row?.verify_code ?? code;
 }
 
 export function getUserById(id: string): Promise<User | undefined> {
@@ -201,6 +224,11 @@ export interface CreateContentInput {
    * preview); agent-skills use 1 (block 0 is the generated onboarding). */
   firstBlockIndex?: number;
   status?: ContentStatus;
+  /** Import provenance + ownership verification (Phase 5). */
+  sourceUrl?: string | null;
+  sourcePlatform?: string | null;
+  ownershipVerified?: boolean;
+  verifiedVia?: string | null;
 }
 
 /** Create content + its chunks atomically. */
@@ -209,8 +237,9 @@ export async function createContent(input: CreateContentInput): Promise<Content>
     const res = await client.query<Content>(
       `INSERT INTO content
          (creator_id, slug, title, summary, tags, content_type, body, price_per_block,
-          gateway_address, status, block_count, published_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+          gateway_address, status, block_count, published_at,
+          source_url, source_platform, ownership_verified, verified_via)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
        RETURNING *`,
       [
         input.creatorId,
@@ -225,6 +254,10 @@ export async function createContent(input: CreateContentInput): Promise<Content>
         input.status ?? "draft",
         input.chunks.filter((c) => !c.isFree).length,
         input.status === "published" ? new Date() : null,
+        input.sourceUrl ?? null,
+        input.sourcePlatform ?? null,
+        input.ownershipVerified ?? false,
+        input.verifiedVia ?? null,
       ]
     );
     const content = res.rows[0];
@@ -453,7 +486,9 @@ export interface InsertLedgerInput {
   creatorAmount: string;
   platformAmount: string;
   referrerAmount: string;
+  reserveAmount?: string;
   referrerId?: string | null;
+  paySessionId?: string | null;
   paymentToken?: string | null;
   txHash?: string | null;
   status: LedgerStatus;
@@ -468,9 +503,9 @@ export async function insertLedger(input: InsertLedgerInput): Promise<LedgerRow>
   const inserted = await queryOne<LedgerRow>(
     `INSERT INTO payment_ledger
        (content_id, creator_id, payer_id, payer_kind, block_index, gross_amount,
-        creator_amount, platform_amount, referrer_amount, referrer_id, payment_token,
-        tx_hash, status, completed_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+        creator_amount, platform_amount, referrer_amount, reserve_amount, referrer_id,
+        pay_session_id, payment_token, tx_hash, status, completed_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
      ON CONFLICT (payment_token) WHERE payment_token IS NOT NULL DO NOTHING
      RETURNING *`,
     [
@@ -483,7 +518,9 @@ export async function insertLedger(input: InsertLedgerInput): Promise<LedgerRow>
       input.creatorAmount,
       input.platformAmount,
       input.referrerAmount,
+      input.reserveAmount ?? "0",
       input.referrerId ?? null,
+      input.paySessionId ?? null,
       input.paymentToken ?? null,
       input.txHash ?? null,
       input.status,
@@ -521,6 +558,87 @@ export function failLedgerByToken(token: string): Promise<LedgerRow | undefined>
   return queryOne<LedgerRow>(
     `UPDATE payment_ledger SET status='failed' WHERE payment_token=$1 AND status='pending' RETURNING *`,
     [token]
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Pay sessions (session-key silent payments — see migration 0003)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface CreatePaySessionInput {
+  mainWallet: string;
+  sessionAddress: string;
+  cap: string;
+  /** ISO timestamp or Date for expiry; null = no expiry. */
+  expiresAt?: Date | null;
+}
+
+/**
+ * Open a new session. Any existing active session for the SAME main wallet is
+ * revoked first (a wallet runs one silent-pay session at a time), which also
+ * frees the partial unique index on session_address.
+ */
+export async function createPaySession(input: CreatePaySessionInput): Promise<PaySessionRow> {
+  return tx(async (client) => {
+    await client.query(
+      `UPDATE pay_sessions SET status='revoked', revoked_at=NOW()
+         WHERE main_wallet=$1 AND status='active'`,
+      [input.mainWallet]
+    );
+    const { rows } = await client.query<PaySessionRow>(
+      `INSERT INTO pay_sessions (main_wallet, session_address, cap, expires_at)
+       VALUES ($1,$2,$3,$4) RETURNING *`,
+      [input.mainWallet, input.sessionAddress, input.cap, input.expiresAt ?? null]
+    );
+    return rows[0];
+  });
+}
+
+export function getPaySessionById(id: string): Promise<PaySessionRow | undefined> {
+  return queryOne<PaySessionRow>(`SELECT * FROM pay_sessions WHERE id = $1`, [id]);
+}
+
+export function getActivePaySession(mainWallet: string): Promise<PaySessionRow | undefined> {
+  return queryOne<PaySessionRow>(
+    `SELECT * FROM pay_sessions WHERE main_wallet = $1 AND status='active'
+       ORDER BY created_at DESC LIMIT 1`,
+    [mainWallet]
+  );
+}
+
+/**
+ * Atomically charge `amount` against a session's cap. Returns the updated row
+ * on success, or null if the session is gone/inactive/expired or the charge
+ * would exceed the cap. The single UPDATE is the concurrency guard.
+ */
+export async function chargePaySession(
+  id: string,
+  amount: string
+): Promise<{ ok: true; session: PaySessionRow } | { ok: false; reason: string }> {
+  const row = await queryOne<PaySessionRow>(
+    `UPDATE pay_sessions
+       SET spent = spent + $2
+     WHERE id = $1
+       AND status='active'
+       AND (expires_at IS NULL OR expires_at > NOW())
+       AND spent + $2 <= cap
+     RETURNING *`,
+    [id, amount]
+  );
+  if (row) return { ok: true, session: row };
+  // Disambiguate the failure for a friendlier message.
+  const current = await getPaySessionById(id);
+  if (!current) return { ok: false, reason: "session_not_found" };
+  if (current.status !== "active") return { ok: false, reason: `session_${current.status}` };
+  if (current.expires_at && current.expires_at <= new Date()) return { ok: false, reason: "session_expired" };
+  return { ok: false, reason: "cap_exceeded" };
+}
+
+export function revokePaySession(id: string): Promise<PaySessionRow | undefined> {
+  return queryOne<PaySessionRow>(
+    `UPDATE pay_sessions SET status='revoked', revoked_at=NOW()
+       WHERE id=$1 AND status='active' RETURNING *`,
+    [id]
   );
 }
 

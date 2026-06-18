@@ -23,6 +23,14 @@ export interface AdminMetrics {
   unlocks24hPrev: number;
   pendingPayouts: string;
   hitRate402: number; // percentage 0-100
+  // Phase 5 additions
+  reserveBalance: string; // accumulated 3% reserve (off-chain ledger sum)
+  referrerPaid: string; // total credited to referrers
+  pendingSettlement: string; // gross still 'pending' (awaiting on-chain settle)
+  failedPayments: number;
+  agentRevenue: string; // gross from agent payers
+  humanRevenue: string; // gross from human payers
+  verifiedPieces: number; // published content with ownership verified
 }
 
 export async function getMetrics(): Promise<AdminMetrics> {
@@ -35,6 +43,12 @@ export async function getMetrics(): Promise<AdminMetrics> {
     unlocks_24h: string;
     unlocks_24h_prev: string;
     creator_credited: string;
+    reserve_balance: string;
+    referrer_paid: string;
+    pending_settlement: string;
+    failed_payments: string;
+    agent_revenue: string;
+    human_revenue: string;
   }>(
     `SELECT
        COALESCE(SUM(gross_amount) FILTER (WHERE status='completed'),0)::text AS total_revenue,
@@ -44,7 +58,13 @@ export async function getMetrics(): Promise<AdminMetrics> {
        COALESCE(SUM(gross_amount) FILTER (WHERE status='completed' AND created_at >= NOW()-INTERVAL '48 hours' AND created_at < NOW()-INTERVAL '24 hours'),0)::text AS revenue_24h_prev,
        COUNT(*) FILTER (WHERE status='completed' AND created_at >= NOW()-INTERVAL '24 hours')::text AS unlocks_24h,
        COUNT(*) FILTER (WHERE status='completed' AND created_at >= NOW()-INTERVAL '48 hours' AND created_at < NOW()-INTERVAL '24 hours')::text AS unlocks_24h_prev,
-       COALESCE(SUM(creator_amount) FILTER (WHERE status='completed'),0)::text AS creator_credited
+       COALESCE(SUM(creator_amount) FILTER (WHERE status='completed'),0)::text AS creator_credited,
+       COALESCE(SUM(reserve_amount) FILTER (WHERE status='completed'),0)::text AS reserve_balance,
+       COALESCE(SUM(referrer_amount) FILTER (WHERE status='completed'),0)::text AS referrer_paid,
+       COALESCE(SUM(gross_amount) FILTER (WHERE status='pending'),0)::text AS pending_settlement,
+       COUNT(*) FILTER (WHERE status='failed')::text AS failed_payments,
+       COALESCE(SUM(gross_amount) FILTER (WHERE status='completed' AND payer_kind='agent'),0)::text AS agent_revenue,
+       COALESCE(SUM(gross_amount) FILTER (WHERE status='completed' AND payer_kind='human'),0)::text AS human_revenue
      FROM payment_ledger`
   );
 
@@ -56,8 +76,10 @@ export async function getMetrics(): Promise<AdminMetrics> {
      FROM users`
   );
 
-  const published = await queryOne<{ count: string }>(
-    `SELECT COUNT(*)::text AS count FROM content WHERE status='published'`
+  const published = await queryOne<{ count: string; verified: string }>(
+    `SELECT COUNT(*)::text AS count,
+            COUNT(*) FILTER (WHERE ownership_verified)::text AS verified
+     FROM content WHERE status='published'`
   );
 
   const activeReaders = await queryOne<{ count: string }>(
@@ -105,6 +127,13 @@ export async function getMetrics(): Promise<AdminMetrics> {
     unlocks24hPrev: Number(rev?.unlocks_24h_prev ?? 0),
     pendingPayouts,
     hitRate402,
+    reserveBalance: rev?.reserve_balance ?? "0",
+    referrerPaid: rev?.referrer_paid ?? "0",
+    pendingSettlement: rev?.pending_settlement ?? "0",
+    failedPayments: Number(rev?.failed_payments ?? 0),
+    agentRevenue: rev?.agent_revenue ?? "0",
+    humanRevenue: rev?.human_revenue ?? "0",
+    verifiedPieces: Number(published?.verified ?? 0),
   };
 }
 

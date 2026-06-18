@@ -44,46 +44,58 @@ Each block is a self-contained skill/section you can purchase and read independe
 ## Pricing
 - **Cost per block:** \`${i.pricePerBlock} USDC\`
 - **Currency:** USDC (Arc testnet, 6 decimals)
-- **Payment protocol:** Circle Gateway (EIP-3009 batched settlement)
-- **Pay to (Gateway address):** \`${i.gatewayAddress}\`
+- **Payment protocol:** x402 over Circle Gateway (EIP-3009 batched settlement)
+- **Gateway (EIP-712 verifyingContract):** \`${i.gatewayAddress}\`
 
-## How to pay (the 402 flow)
-1. Request a block:
+## How to pay — x402 (recommended)
+1. Request a block with NO payment to get the quote:
    \`\`\`
    GET ${url}?block=1
+   → HTTP 402 Payment Required
    \`\`\`
-   With no payment you get \`HTTP 402 Payment Required\` plus machine-readable
-   instructions (gateway address, cost, currency).
-2. Pay \`${i.pricePerBlock} USDC\` to the Gateway address above via Circle Gateway.
-   You receive a payment token.
-3. Retry the same URL with the token header:
+   The 402 body has an \`accepts[]\` array (standard x402). Each entry gives the
+   \`amount\` (USDC base units), \`asset\` (USDC), \`payTo\` (the creator's wallet),
+   \`network\` (eip155:5042002), and \`extra.verifyingContract\` (the Gateway).
+2. Sign an EIP-3009 \`TransferWithAuthorization\` for \`payTo\` (EIP-712 domain
+   \`{ name: "GatewayWalletBatched", version: "1", chainId: 5042002,
+   verifyingContract }\`). Base64-encode \`{ x402Version: 2, payload: {
+   authorization: { from, to, value, validAfter, validBefore, nonce },
+   signature } }\`.
+3. Retry with the \`X-Payment\` header:
    \`\`\`
    GET ${url}?block=1
-   X-Payment-Token: <your-token>
+   X-Payment: <base64 payload>
    \`\`\`
-   The block content is returned immediately (optimistically). Earnings are
-   finalized once Circle confirms the payment via webhook.
+   The server verifies + settles via Circle Gateway and returns the block plus an
+   \`X-Payment-Response\` header (base64 receipt: txHash, payer, amount).
 
-## Worked example
-Request (unpaid):
+## Legacy fallback (still supported)
+Pay \`${i.pricePerBlock} USDC\` out-of-band and retry with \`X-Payment-Token: <tx
+or token>\`. The block is served optimistically and reconciled by webhook.
+
+## Worked example (x402)
 \`\`\`
 $ curl -i "${url}?block=1"
 HTTP/1.1 402 Payment Required
 {
-  "error": "Payment required",
-  "block_index": 1,
-  "payment_gateway": "${i.gatewayAddress}",
+  "x402Version": 1,
+  "error": "payment_required",
+  "accepts": [{
+    "scheme": "exact",
+    "network": "eip155:5042002",
+    "asset": "<USDC>",
+    "amount": "<base units of ${i.pricePerBlock}>",
+    "payTo": "<creator wallet>",
+    "extra": { "name": "GatewayWalletBatched", "version": "1", "verifyingContract": "${i.gatewayAddress}" }
+  }],
   "cost_per_block": "${i.pricePerBlock}",
-  "currency": "USDC",
-  "instructions": "Send payment via Circle Gateway, then retry with header: X-Payment-Token: <token>"
+  "currency": "USDC"
 }
-\`\`\`
-Request (paid):
-\`\`\`
-$ curl -i -H "X-Payment-Token: <token>" "${url}?block=1"
+
+$ curl -i -H "X-Payment: <base64>" "${url}?block=1"
 HTTP/1.1 200 OK
-X-RateLimit-Limit: 60
-X-RateLimit-Remaining: 59
+X-Payment-Response: <base64 receipt>
+X-Payment-Status: completed
 ... block 1 content ...
 \`\`\`
 

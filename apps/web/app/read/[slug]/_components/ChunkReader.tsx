@@ -1,13 +1,17 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { useAccount, useChainId, useSignTypedData, useSwitchChain } from "wagmi";
 import { readContract, writeContract, waitForTransactionReceipt } from "@wagmi/core";
 import { erc20Abi } from "viem";
+import type { Address } from "viem";
 import { useToast } from "@/components/Toaster";
 import { wagmiConfig } from "@/lib/wagmi";
+import { buildSessionPayment } from "@/lib/session-key-client";
+import PaySetupModal, { type PaySessionInfo } from "@/components/PaySetupModal";
+import BalanceChip, { PAY_SESSION_EVENT } from "@/components/BalanceChip";
 
 const ARC_CHAIN_ID = Number(process.env.NEXT_PUBLIC_ARC_CHAIN_ID ?? "5042002");
 
@@ -59,6 +63,7 @@ interface Props {
   contentType: string;
   pricePerBlock: string;
   agentUrl: string | null;
+  verifiedSource?: string | null;
   chunks: ChunkView[];
 }
 
@@ -69,6 +74,11 @@ export default function ChunkReader(props: Props) {
   const [unlocked, setUnlocked] = useState<Record<number, string>>({});
   const [paying, setPaying] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Silent-payment session state.
+  const [sessionActive, setSessionActive] = useState(false);
+  const [showSetup, setShowSetup] = useState(false);
+  const [pendingBlock, setPendingBlock] = useState<number | null>(null);
 
   const { address, isConnected } = useAccount();
   const chainId = useChainId();
@@ -85,6 +95,23 @@ export default function ChunkReader(props: Props) {
       /* ignore */
     }
   }, [storageKey]);
+
+  // Detect an existing silent-payment session for this device.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/pay-session/balance", { cache: "no-store" });
+        const data = await res.json();
+        if (!cancelled) setSessionActive(!!data.active);
+      } catch {
+        /* ignore */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [address]);
 
   const persist = (next: Record<number, string>) => {
     setUnlocked(next);
@@ -105,7 +132,130 @@ export default function ChunkReader(props: Props) {
   const nextLocked = payable.find((c) => !unlockedChunkIds.has(c.id));
   const spent = (unlockedPayable * Number(pricePerBlock)).toFixed(6);
 
-  async function unlock(blockIndex: number) {
+  /** Fetch a fresh quote (price + recipient) for a block. */
+  async function quoteBlock(blockIndex: number) {
+    const res = await fetch(`/api/reader/${slug}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ blockIndex }),
+    });
+    return res.json();
+  }
+
+  /** Silent path: sign a burn intent with the local session key (no popup). */
+  const doSilentPay = useCallback(
+    async (blockIndex: number, quote: { requirements: { amount: string }; sessionRecipient: Address }) => {
+      if (!address) return false;
+      const value = BigInt(quote.requirements.amount);
+      const sessionPayment = await buildSessionPayment({
+        mainWallet: address,
+        recipient: quote.sessionRecipient,
+        value,
+      });
+      const res = await fetch(`/api/reader/${slug}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ blockIndex, sessionPayment }),
+      });
+      const d = await res.json();
+      if (d.paid && (d.text != null || d.alreadyUnlocked)) {
+        persist({ ...unlocked, [blockIndex]: d.text ?? unlocked[blockIndex] ?? "" });
+        window.dispatchEvent(new Event(PAY_SESSION_EVENT));
+        toast("success", `Unlocked block ${blockIndex} — silent.`);
+        return true;
+      }
+      // Session ended or cap reached → fall back to setup / wallet.
+      if (res.status === 401 || d.error === "no_pay_session") {
+        setSessionActive(false);
+        return false;
+      }
+      throw new Error(d.friendly ?? d.error ?? "Silent payment failed.");
+    },
+    [address, slug, unlocked, toast]
+  );
+
+  /** Wallet path (one popup): Gateway-balance sign, else a direct USDC transfer. */
+  async function doWalletPay(
+    blockIndex: number,
+    quote: {
+      requirements: {
+        amount: string;
+        payTo: `0x${string}`;
+        asset: `0x${string}`;
+        maxTimeoutSeconds: number;
+        extra: { verifyingContract: `0x${string}` };
+      };
+    }
+  ) {
+    if (!address) return;
+    if (chainId !== ARC_CHAIN_ID) {
+      toast("info", "Approve the switch to Arc Testnet in your wallet…");
+      await switchChainAsync({ chainId: ARC_CHAIN_ID });
+    }
+    const req = quote.requirements;
+    const amountWei = BigInt(req.amount);
+
+    let gatewayBalance = 0n;
+    try {
+      gatewayBalance = await withTimeout(
+        readContract(wagmiConfig, {
+          address: req.extra.verifyingContract,
+          abi: GATEWAY_WALLET_ABI,
+          functionName: "availableBalance",
+          args: [req.asset, address],
+        }) as Promise<bigint>,
+        4000,
+        "gateway_balance"
+      );
+    } catch {
+      gatewayBalance = 0n;
+    }
+
+    let d: { paid?: boolean; text?: string; amountDisplay?: string; friendly?: string; error?: string };
+    if (gatewayBalance >= amountWei) {
+      toast("info", "Sign to pay — gasless via Circle Gateway.");
+      const now = Math.floor(Date.now() / 1000);
+      const validAfter = (now - 600).toString();
+      const validBefore = (now + Math.max(req.maxTimeoutSeconds, 7 * 24 * 3600 + 100)).toString();
+      const nonce = randomNonce();
+      const authorization = { from: address, to: req.payTo, value: req.amount, validAfter, validBefore, nonce };
+      const signature = await signTypedDataAsync({
+        domain: { name: "GatewayWalletBatched", version: "1", chainId: ARC_CHAIN_ID, verifyingContract: req.extra.verifyingContract },
+        types: TRANSFER_WITH_AUTHORIZATION_TYPES,
+        primaryType: "TransferWithAuthorization",
+        message: { from: address, to: req.payTo, value: amountWei, validAfter: BigInt(validAfter), validBefore: BigInt(validBefore), nonce },
+      });
+      d = await (await fetch(`/api/reader/${slug}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ blockIndex, authorization, signature }),
+      })).json();
+    } else {
+      toast("info", "Confirm the USDC payment in your wallet…");
+      const hash = await writeContract(wagmiConfig, {
+        address: req.asset,
+        abi: erc20Abi,
+        functionName: "transfer",
+        args: [req.payTo, amountWei],
+      });
+      toast("info", "Payment sent — confirming on Arc…");
+      await waitForTransactionReceipt(wagmiConfig, { hash });
+      d = await (await fetch(`/api/reader/${slug}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ blockIndex, directTx: { hash, from: address } }),
+      })).json();
+    }
+
+    if (d.paid && d.text != null) {
+      persist({ ...unlocked, [blockIndex]: d.text });
+      toast("success", `Unlocked block ${blockIndex}${d.amountDisplay ? ` · ${d.amountDisplay} USDC` : ""}.`);
+    } else {
+      throw new Error(d.friendly ?? d.error ?? "Payment could not be settled.");
+    }
+  }
+
+  async function unlock(blockIndex: number, opts?: { forceWallet?: boolean }) {
     if (!isConnected || !address) {
       toast("warning", "Connect your wallet to unlock this block.");
       return;
@@ -113,90 +263,31 @@ export default function ChunkReader(props: Props) {
     setPaying(blockIndex);
     setError(null);
     try {
-      const quoteRes = await fetch(`/api/reader/${slug}`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ blockIndex }),
-      });
-      const quote = await quoteRes.json();
+      const quote = await quoteBlock(blockIndex);
       if (quote.free) {
         persist({ ...unlocked, [blockIndex]: quote.text });
         return;
       }
       if (!quote.needsPayment) throw new Error(quote.friendly ?? quote.error ?? "Could not price this block.");
 
-      if (chainId !== ARC_CHAIN_ID) {
-        toast("info", "Approve the switch to Arc Testnet in your wallet…");
-        await switchChainAsync({ chainId: ARC_CHAIN_ID });
+      // Preferred: silent session payment (no popup) when a session is active.
+      if (sessionActive && !opts?.forceWallet) {
+        const ok = await doSilentPay(blockIndex, quote);
+        if (ok) return;
+        // session unusable → offer setup again.
+        setPendingBlock(blockIndex);
+        setShowSetup(true);
+        return;
       }
 
-      const req = quote.requirements as {
-        amount: string;
-        payTo: `0x${string}`;
-        asset: `0x${string}`;
-        maxTimeoutSeconds: number;
-        extra: { verifyingContract: `0x${string}` };
-      };
-      const amountWei = BigInt(req.amount);
-
-      let gatewayBalance = 0n;
-      try {
-        gatewayBalance = await withTimeout(
-          readContract(wagmiConfig, {
-            address: req.extra.verifyingContract,
-            abi: GATEWAY_WALLET_ABI,
-            functionName: "availableBalance",
-            args: [req.asset, address],
-          }) as Promise<bigint>,
-          4000,
-          "gateway_balance"
-        );
-      } catch {
-        gatewayBalance = 0n;
+      // No session yet → invite the one-time setup (unless paying by wallet).
+      if (!opts?.forceWallet) {
+        setPendingBlock(blockIndex);
+        setShowSetup(true);
+        return;
       }
 
-      let d: { paid?: boolean; text?: string; amountDisplay?: string; friendly?: string; error?: string };
-      if (gatewayBalance >= amountWei) {
-        toast("info", "Sign to pay — gasless via Circle Gateway.");
-        const now = Math.floor(Date.now() / 1000);
-        const validAfter = (now - 600).toString();
-        const validBefore = (now + Math.max(req.maxTimeoutSeconds, 7 * 24 * 3600 + 100)).toString();
-        const nonce = randomNonce();
-        const authorization = { from: address, to: req.payTo, value: req.amount, validAfter, validBefore, nonce };
-        const signature = await signTypedDataAsync({
-          domain: { name: "GatewayWalletBatched", version: "1", chainId: ARC_CHAIN_ID, verifyingContract: req.extra.verifyingContract },
-          types: TRANSFER_WITH_AUTHORIZATION_TYPES,
-          primaryType: "TransferWithAuthorization",
-          message: { from: address, to: req.payTo, value: amountWei, validAfter: BigInt(validAfter), validBefore: BigInt(validBefore), nonce },
-        });
-        d = await (await fetch(`/api/reader/${slug}`, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ blockIndex, authorization, signature }),
-        })).json();
-      } else {
-        toast("info", "Confirm the USDC payment in your wallet…");
-        const hash = await writeContract(wagmiConfig, {
-          address: req.asset,
-          abi: erc20Abi,
-          functionName: "transfer",
-          args: [req.payTo, amountWei],
-        });
-        toast("info", "Payment sent — confirming on Arc…");
-        await waitForTransactionReceipt(wagmiConfig, { hash });
-        d = await (await fetch(`/api/reader/${slug}`, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ blockIndex, directTx: { hash, from: address } }),
-        })).json();
-      }
-
-      if (d.paid && d.text != null) {
-        persist({ ...unlocked, [blockIndex]: d.text });
-        toast("success", `Unlocked block ${blockIndex}${d.amountDisplay ? ` · ${d.amountDisplay} USDC` : ""}.`);
-      } else {
-        throw new Error(d.friendly ?? d.error ?? "Payment could not be settled.");
-      }
+      await doWalletPay(blockIndex, quote);
     } catch (e) {
       const msg = String((e as { shortMessage?: string; message?: string })?.shortMessage ?? (e as Error)?.message ?? e);
       if (/rejected|denied|cancell?ed/i.test(msg)) {
@@ -210,14 +301,34 @@ export default function ChunkReader(props: Props) {
     }
   }
 
+  function onSessionReady(_session: PaySessionInfo) {
+    setSessionActive(true);
+    setShowSetup(false);
+    window.dispatchEvent(new Event(PAY_SESSION_EVENT));
+    const blk = pendingBlock;
+    setPendingBlock(null);
+    if (blk != null) void unlock(blk); // now silent
+  }
+
   return (
     <div className="mx-auto max-w-3xl px-margin-mobile py-stack-lg md:px-margin-desktop">
-      <Link href="/marketplace" className="mb-6 inline-flex items-center gap-1 font-label-caps text-label-caps text-outline hover:text-primary">
-        ← Marketplace
-      </Link>
+      <div className="mb-6 flex items-center justify-between gap-3">
+        <Link href="/for-you" className="inline-flex items-center gap-1 font-label-caps text-label-caps text-outline hover:text-primary">
+          ← For You
+        </Link>
+        {isConnected && <BalanceChip pricePerBlock={pricePerBlock} onTopUp={() => setShowSetup(true)} />}
+      </div>
 
       <div className="mb-1 flex items-center gap-2">
         <span className="pill">{props.contentType}</span>
+        {props.verifiedSource && (
+          <span
+            className="flex items-center gap-0.5 font-label-caps text-label-caps text-secondary"
+            title={`Ownership of the original ${props.verifiedSource} verified`}
+          >
+            <span className="material-symbols-outlined text-[15px]">verified</span>verified source
+          </span>
+        )}
         {agentUrl && (
           <a href={agentUrl} className="font-data-mono text-[11px] text-primary" title="Agent endpoint">agent-skills.md</a>
         )}
@@ -232,6 +343,7 @@ export default function ChunkReader(props: Props) {
         <span>{unlockedPayable} of {payable.length} blocks unlocked</span>
         <span>·</span>
         <span>spent {spent} USDC</span>
+        {sessionActive && <span className="text-secondary">· one-tap on</span>}
       </div>
 
       {summary && <p className="mb-8 border-l-4 border-outline-variant pl-4 font-body-lg text-on-surface-variant">{summary}</p>}
@@ -259,9 +371,24 @@ export default function ChunkReader(props: Props) {
                   {!isConnected ? (
                     <ConnectButton />
                   ) : (
-                    <button onClick={() => unlock(c.blockIndex)} disabled={paying !== null} className="btn-primary px-8 py-3">
-                      {paying === c.blockIndex ? "Confirm in wallet…" : `Pay ${pricePerBlock} USDC to unlock`}
-                    </button>
+                    <>
+                      <button onClick={() => unlock(c.blockIndex)} disabled={paying !== null} className="btn-primary px-8 py-3">
+                        {paying === c.blockIndex
+                          ? sessionActive ? "Unlocking…" : "Confirm in wallet…"
+                          : sessionActive
+                            ? `Unlock · ${pricePerBlock} USDC`
+                            : `Read on — ${pricePerBlock} USDC/block`}
+                      </button>
+                      {!sessionActive && (
+                        <button
+                          onClick={() => unlock(c.blockIndex, { forceWallet: true })}
+                          disabled={paying !== null}
+                          className="font-body-sm text-[12px] text-outline hover:text-primary"
+                        >
+                          or pay just this block with your wallet
+                        </button>
+                      )}
+                    </>
                   )}
                 </div>
               )}
@@ -277,6 +404,18 @@ export default function ChunkReader(props: Props) {
           <span className="material-symbols-outlined text-[20px]">check_circle</span>
           Fully unlocked — every block paid the creator directly.
         </div>
+      )}
+
+      {showSetup && address && (
+        <PaySetupModal
+          mainWallet={address}
+          suggestedCap={Math.max(Number(pricePerBlock) * payable.length, Number(pricePerBlock) * 5)}
+          onReady={onSessionReady}
+          onClose={() => {
+            setShowSetup(false);
+            setPendingBlock(null);
+          }}
+        />
       )}
     </div>
   );

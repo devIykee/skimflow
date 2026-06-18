@@ -16,11 +16,16 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     async jwt({ token, user, account, profile, trigger }) {
       // On sign-in `user` is present → create/refresh the DB record.
       if (user?.email) {
+        // GitHub OAuth profile carries `login` (the username) — capture it so we
+        // can verify ownership of imported GitHub repos.
+        const githubUsername =
+          account?.provider === "github" ? ((profile?.login as string | undefined) ?? null) : null;
         const { user: dbUser, isNew } = await upsertUserFromOAuth({
           email: user.email,
           name: user.name ?? (profile?.name as string | undefined) ?? null,
           avatar: user.image ?? (profile?.picture as string | undefined) ?? null,
           provider: account?.provider ?? null,
+          githubUsername,
         });
         token.uid = dbUser.id;
         token.role = dbUser.role;

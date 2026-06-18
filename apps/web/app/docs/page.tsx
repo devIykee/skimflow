@@ -183,7 +183,7 @@ const block = await res.text();   // the unlocked block — ready to use`}</Code
         <p className="mb-stack-md font-body-md text-on-surface-variant">Publish your first article or skill in under a minute.</p>
         <div className="flex justify-center gap-gutter">
           <Link href="/dashboard" className="btn-primary px-8 py-3">Open Creator Dashboard</Link>
-          <Link href="/marketplace" className="btn-outline px-8 py-3">Browse Marketplace</Link>
+          <Link href="/for-you" className="btn-outline px-8 py-3">Browse the feed</Link>
         </div>
       </div>
     </div>

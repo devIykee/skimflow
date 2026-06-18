@@ -40,7 +40,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               </Link>
               <div className="hidden items-center gap-stack-lg md:flex">
                 <NavLink href="/">Home</NavLink>
-                <NavLink href="/marketplace">Marketplace</NavLink>
+                <NavLink href="/for-you">For You</NavLink>
                 <NavLink href="/dashboard">Dashboard</NavLink>
                 <NavLink href="/docs">Docs</NavLink>
               </div>
@@ -58,7 +58,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               </div>
               <div className="flex gap-gutter">
                 <Link className="font-body-sm text-body-sm text-on-surface-variant hover:text-primary" href="/docs">Docs</Link>
-                <Link className="font-body-sm text-body-sm text-on-surface-variant hover:text-primary" href="/marketplace">Marketplace</Link>
+                <Link className="font-body-sm text-body-sm text-on-surface-variant hover:text-primary" href="/for-you">For You</Link>
                 <Link className="font-body-sm text-body-sm text-on-surface-variant hover:text-primary" href="/dashboard">Dashboard</Link>
               </div>
             </div>

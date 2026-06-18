@@ -30,6 +30,8 @@ export async function GET(req: NextRequest) {
       creatorName: r.creator_name,
       creatorAvatar: r.creator_avatar,
       creatorVerified: r.creator_verified,
+      ownershipVerified: r.ownership_verified,
+      sourcePlatform: r.source_platform,
       url: `/read/${r.slug}`,
       agentUrl: r.content_type === "agent-skills" ? `/read/${r.slug}/agent-skills.md` : null,
     })),
