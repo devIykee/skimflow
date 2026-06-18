@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import Providers from "./providers";
 import UserMenu from "@/components/UserMenu";
+import { Analytics } from '@vercel/analytics/next';
 
 export const metadata: Metadata = {
   title: "LinePay Cite — get paid every time someone reads a line",
@@ -64,6 +65,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             </div>
           </footer>
         </Providers>
+        <Analytics />
       </body>
     </html>
   );
