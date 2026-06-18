@@ -36,9 +36,12 @@ export async function POST(req: NextRequest) {
     if (!sessCheck.valid || !sessCheck.checksummed)
       return Response.json({ error: "bad_session_address" }, { status: 400 });
 
+    // The cap string EXACTLY as the client signed it (don't normalize before
+    // verifying — the wallet signed the raw value, e.g. "5", not "5.000000").
+    const signedCap = String(body.cap ?? "").trim();
     let cap: string;
     try {
-      cap = normalizeUsdc(body.cap ?? "");
+      cap = normalizeUsdc(signedCap);
     } catch {
       return Response.json({ error: "bad_cap", friendly: "Enter a valid spend cap." }, { status: 400 });
     }
@@ -47,8 +50,9 @@ export async function POST(req: NextRequest) {
     const mainWallet = mainCheck.checksummed as Address;
     const sessionAddress = sessCheck.checksummed as Address;
 
-    // Verify the one-time ownership signature over the bound message.
-    const message = paySessionAuthMessage({ mainWallet, sessionAddress, cap });
+    // Verify the one-time ownership signature over the bound message, rebuilt
+    // with the SAME cap string the client used so the digests match.
+    const message = paySessionAuthMessage({ mainWallet, sessionAddress, cap: signedCap });
     if (!body.signature) return Response.json({ error: "missing_signature" }, { status: 400 });
     let valid = false;
     try {
