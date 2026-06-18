@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-export const metadata = { title: "Creator Docs — LinePay Cite" };
+export const metadata = { title: "Docs — LinePay Cite" };
 
 function Code({ children, lang }: { children: string; lang?: string }) {
   return (
@@ -23,40 +23,57 @@ export default function DocsPage() {
   return (
     <div className="mx-auto max-w-4xl px-margin-mobile py-stack-lg md:px-margin-desktop">
       <header className="mb-8">
-        <span className="label-caps text-primary">CREATOR DOCUMENTATION</span>
-        <h1 className="mt-1 font-display-lg text-display-lg-mobile md:text-display-lg">Publish &amp; monetize, by the line</h1>
+        <span className="label-caps text-primary">DOCUMENTATION</span>
+        <h1 className="mt-1 font-display-lg text-display-lg-mobile md:text-display-lg">Get paid for your writing, one block at a time</h1>
         <p className="mt-2 max-w-2xl font-body-lg text-body-lg text-on-surface-variant">
-          Whether you write articles, light-novel chapters, AI agent skills, prompt templates, or
-          knowledge bases — price your text <strong>per line</strong> and get paid by humans and
-          autonomous agents alike, settled as USDC on Arc.
+          LinePay Cite lets you publish text — articles or AI&nbsp;agent skills — and charge a tiny
+          amount to unlock it. Both people <em>and</em> autonomous AI agents can pay, in USDC, on the
+          Arc test network. New here? This page walks you through the whole idea in a few minutes.
         </p>
       </header>
 
+      {/* How it works — the mental model first */}
+      <section className="mb-stack-lg grid grid-cols-1 gap-3 md:grid-cols-3">
+        {[
+          ["1", "You publish text", "Paste an article or an agent skill. We automatically split it into small “blocks” (a few paragraphs each)."],
+          ["2", "Readers unlock blocks", "The first block is a free preview. Each block after it costs a few cents — or a fraction of a cent — to unlock."],
+          ["3", "You get paid instantly", "Every unlock pays you in USDC. You keep 85%. Earnings show up live on your dashboard."],
+        ].map(([n, title, body]) => (
+          <div key={n} className="rounded-xl border border-outline-variant bg-surface-container-low p-4">
+            <div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary font-data-mono text-[13px] text-on-primary">{n}</div>
+            <div className="mt-2 font-label-lg text-label-lg">{title}</div>
+            <p className="mt-1 font-body-sm text-on-surface-variant">{body}</p>
+          </div>
+        ))}
+      </section>
+      <p className="font-body-sm text-on-surface-variant">
+        <strong>What&apos;s a “block”?</strong> It&apos;s just a chunk of your text — roughly a section or a
+        few paragraphs. You write normally; we do the splitting. Readers pay per block, so they only
+        pay for what they actually read.
+      </p>
+
       {/* TOC */}
-      <nav className="mb-stack-lg flex flex-wrap gap-2">
+      <nav className="mb-stack-lg mt-stack-md flex flex-wrap gap-2">
         {[
           ["what", "What you can sell"],
-          ["format", "Formatting & pricing"],
-          ["upload", "Uploading"],
-          ["x402", "The x402 endpoint"],
-          ["agent", "Agent integration"],
-          ["circle", "Circle Gateway SDK"],
-          ["onchain", "On-chain marketplace"],
-          ["splits", "Revenue splits"],
+          ["pricing", "Pricing & blocks"],
+          ["publish", "Publishing"],
+          ["humans", "How people read"],
+          ["agents", "How AI agents buy"],
+          ["discovery", "Agent discovery"],
+          ["splits", "Your earnings"],
+          ["live", "Going live"],
         ].map(([id, label]) => (
           <a key={id} href={`#${id}`} className="pill">{label}</a>
         ))}
       </nav>
 
       <H2 id="what">What you can sell</H2>
-      <p className="font-body-md text-on-surface-variant">Every item has a <span className="font-data-mono text-body-sm">kind</span>. It only changes how the reader renders — articles get a prose reader; skills/prompts/knowledge get a locked code-block view.</p>
+      <p className="font-body-md text-on-surface-variant">There are two kinds of content. They&apos;re read a little differently, but they&apos;re priced and paid for the same way.</p>
       <ul className="mt-stack-md grid grid-cols-1 gap-3 md:grid-cols-2">
         {[
-          ["article", "Essays, reporting, blog posts — prose reader."],
-          ["novel_chapter", "Serial fiction; supports a series + chapter number."],
-          ["agent-skill", "A reusable capability/system prompt an agent buys to execute a task."],
-          ["prompt-template", "Parameterized prompts; sold per line, code-block view."],
-          ["knowledge-base", "Reference fragments an agent cites to ground an answer."],
+          ["article", "Essays, reporting, blog posts, serial fiction — anything prose. Readers get a clean reading view, unlocking block by block."],
+          ["agent-skills", "A reusable skill, system prompt, or knowledge file written for AI agents to buy and use. Served as Markdown at a machine-friendly endpoint."],
         ].map(([k, d]) => (
           <li key={k} className="rounded-lg border border-on-surface/10 bg-surface-container-lowest p-3">
             <span className="font-data-mono text-body-sm text-primary">{k}</span>
@@ -65,115 +82,108 @@ export default function DocsPage() {
         ))}
       </ul>
 
-      <H2 id="format">Formatting &amp; pricing</H2>
-      <p className="font-body-md text-on-surface-variant">Content is Markdown. Pricing is per <em>line</em> (a line is any <span className="font-data-mono text-body-sm">\n</span>-separated row, blank lines included — exactly what a reader is charged for). The first <span className="font-data-mono text-body-sm">freeLines</span> are a free preview so humans and agents can judge relevance before paying.</p>
+      <H2 id="pricing">Pricing &amp; blocks</H2>
+      <p className="font-body-md text-on-surface-variant">You set one number: <strong>price per block</strong>, in US dollars (settled as USDC). That&apos;s it.</p>
       <ul className="mt-stack-md list-disc space-y-1 pl-6 font-body-md text-on-surface-variant">
-        <li><strong>pricePerLine</strong>: dollars, e.g. <span className="font-data-mono text-body-sm">0.00005</span> ($0.00005/line). Floor is $0.000001.</li>
-        <li><strong>freeLines</strong>: default 3. Keep a hook; a paywall with no preview gets skipped, not paid.</li>
-        <li>Re-price anytime — quotes are generated per request, so changes take effect immediately.</li>
+        <li><strong>The first block is always free.</strong> It&apos;s the preview that convinces someone to pay for the rest — a paywall with no preview just gets skipped.</li>
+        <li><strong>Price per block</strong> can be tiny, e.g. <span className="font-data-mono text-body-sm">0.002</span> ($0.002 — a fifth of a cent). Pick whatever fits; you can change it any time.</li>
+        <li><strong>Re-pricing is instant.</strong> Every unlock is quoted fresh, so a price change takes effect on the next reader.</li>
       </ul>
 
-      <H2 id="upload">Uploading</H2>
-      <p className="font-body-md text-on-surface-variant">Use the <Link href="/creators" className="text-primary">Creator Portal</Link>, or POST directly:</p>
-      <Code lang="bash">{`curl -X POST http://localhost:3000/api/content \\
-  -H 'content-type: application/json' \\
-  -d '{
-    "creatorHandle": "ada_writes",
-    "kind": "agent-skill",
-    "title": "Resilient web-scraper skill",
-    "summary": "A battle-tested extraction routine with retries + backoff.",
-    "tags": "scraping,agents,python",
-    "pricePerLine": 0.0002,
-    "freeLines": 4,
-    "body": "# Web Scraper Skill\\nYou are a careful extraction agent...\\n..."
-  }'`}</Code>
-      <p className="font-body-sm text-on-surface-variant">Register your creator + wallet first (<span className="font-data-mono text-body-sm">POST /api/creators</span> with <span className="font-data-mono text-body-sm">{`{ handle, wallet }`}</span>), or do both in the portal UI.</p>
-
-      <H2 id="x402">The x402 endpoint</H2>
-      <p className="font-body-md text-on-surface-variant">Every piece is automatically protected at:</p>
-      <Code lang="http">{`GET /api/content/:id?lineStart=4&lineEnd=44`}</Code>
-      <p className="font-body-md text-on-surface-variant">Unpaid requests for a paid range get <span className="font-data-mono text-body-sm">HTTP 402</span> with a machine-readable quote:</p>
+      <H2 id="publish">Publishing</H2>
+      <p className="font-body-md text-on-surface-variant">
+        The easy way: open the <Link href="/dashboard" className="text-primary">Creator Dashboard</Link>, sign in
+        with Google or GitHub, add a payout wallet, and hit <strong>New content</strong>. Paste your text, set a
+        price, publish. Done in under a minute.
+      </p>
+      <p className="mt-stack-md font-body-md text-on-surface-variant">Prefer the API? Once you&apos;re signed in, your browser session can post to the same endpoint the dashboard uses:</p>
+      <Code lang="http">{`POST /api/creator/content      (requires you to be signed in)`}</Code>
       <Code lang="json">{`{
-  "x402Version": 1,
-  "error": "payment_required",
-  "accepts": [{
-    "scheme": "gateway-exact",
-    "network": "arc-testnet",
-    "amount": "8000",            // USDC base units (6 decimals)
-    "asset": "0x...USDC",
-    "payTo": "0x...creatorOrSplit",
-    "resource": ".../api/content/c_abc?lineStart=4&lineEnd=44",
-    "nonce": "0x...",
-    "extra": { "lineCount": 40, "pricePerLine": "200", "creatorHandle": "ada_writes" }
-  }]
+  "title": "Resilient web-scraper skill",
+  "contentType": "agent-skills",       // or "article"
+  "summary": "A battle-tested extraction routine with retries + backoff.",
+  "tags": "scraping,agents,python",
+  "pricePerBlock": 0.002,              // US dollars per block
+  "status": "published",               // or "draft"
+  "body": "# Web Scraper Skill\\nYou are a careful extraction agent...\\n..."
 }`}</Code>
-      <p className="font-body-md text-on-surface-variant">Pay by retrying with the signed Circle Gateway authorization in the <span className="font-data-mono text-body-sm">X-PAYMENT</span> header. On success you get the text plus an <span className="font-data-mono text-body-sm">X-PAYMENT-RESPONSE</span> receipt (the on-chain tx hash — your citation provenance).</p>
+      <p className="font-body-sm text-on-surface-variant">Your text is split into blocks automatically. For articles the first block is the free preview; for agent-skills a free intro block is generated for you and your blocks start at block 1.</p>
 
-      <H2 id="agent">Agent integration (the part that wins)</H2>
-      <p className="font-body-md text-on-surface-variant">Any external agent can buy your skill. With the bundled SDK:</p>
-      <Code lang="typescript">{`import { GatewayClient, loadArcConfig, decodePayment, encodePayment } from "@linepay/sdk";
+      <H2 id="humans">How people read</H2>
+      <p className="font-body-md text-on-surface-variant">
+        Every article has a public page at <span className="font-data-mono text-body-sm">/read/&lt;slug&gt;</span>. A reader
+        sees the title, summary, and the free first block. To read more they connect a wallet (with a little USDC on
+        Arc testnet) and click to unlock the next block — the payment is signed in their wallet and the text appears
+        instantly. Unlocked blocks stay unlocked on that device. No account or subscription required.
+      </p>
 
-const base = "https://your-deployment";
-const gw = new GatewayClient(loadArcConfig());
-const agentWallet = "0xYourAgentWallet";
+      <H2 id="agents">How AI agents buy (the interesting part)</H2>
+      <p className="font-body-md text-on-surface-variant">
+        Your agent-skills are also for sale to <em>software</em>. An autonomous agent can find your skill, see the
+        price, pay, and use it — with no human involved. It works over plain HTTP using the
+        {" "}<a href="https://www.x402.org" className="text-primary" target="_blank" rel="noreferrer">x402</a> “pay-to-unlock” pattern:
+      </p>
+      <ol className="mt-stack-md list-decimal space-y-1 pl-6 font-body-md text-on-surface-variant">
+        <li>The agent fetches your skill and reads the <strong>free block 0</strong> to decide if it&apos;s relevant.</li>
+        <li>It requests a paid block and gets back <span className="font-data-mono text-body-sm">HTTP 402 Payment Required</span> with a price quote.</li>
+        <li>It pays the quoted USDC, then retries with a payment token and receives the block.</li>
+      </ol>
+      <Code lang="typescript">{`const base = "https://your-deployment";
+const slug = "resilient-web-scraper-abc12";
 
-// 1) hit the paywalled range
-let res = await fetch(\`\${base}/api/content/\${id}?lineStart=4&lineEnd=44\`);
+// 1. Read the free intro block — no payment.
+const intro = await fetch(\`\${base}/read/\${slug}/agent-skills.md\`).then(r => r.text());
+
+// 2. Ask for a paid block → the server answers 402 with a price quote.
+let res = await fetch(\`\${base}/read/\${slug}/agent-skills.md?block=1\`);
 if (res.status === 402) {
-  const { accepts: [req] } = await res.json();
+  const quote = await res.json();
+  // { cost_per_block, currency: "USDC", payment_gateway, instructions }
 
-  // 2) (your Guardian policy decides here: budget, max $/line, relevance)
-
-  // 3) sign a gas-free Gateway authorization and retry
-  const payment = await gw.createPayment(req, agentWallet, process.env.AGENT_WALLET_PRIVATE_KEY);
-  res = await fetch(req.resource, { headers: { "x-payment": encodePayment(payment) } });
+  // 3. Pay via Circle Gateway, then retry with the payment token.
+  const token = await payViaCircleGateway(quote);   // your wallet, or the bundled SDK
+  res = await fetch(\`\${base}/read/\${slug}/agent-skills.md?block=1\`, {
+    headers: { "X-Payment-Token": token },
+  });
 }
-const { text, txHash } = await res.json();   // txHash = payment receipt to cite`}</Code>
-      <p className="font-body-md text-on-surface-variant">Or just point the built-in agent at your content — see the <Link href="/demo" className="text-primary">Agent Demo</Link>. It discovers, evaluates, clears its Guardian spend policy, pays, and returns a cited answer where every citation carries the tx hash.</p>
+const block = await res.text();   // the unlocked block — ready to use`}</Code>
+      <p className="font-body-md text-on-surface-variant">
+        Don&apos;t want to write any of that? This repo ships a ready-made buyer agent. Point it at any skill and it
+        discovers, evaluates, pays, and returns a cited answer:
+      </p>
+      <Code lang="bash">{`npm run agent -- --url <deployment> --slug <slug> --simulate`}</Code>
+      <p className="font-body-sm text-on-surface-variant"><span className="font-data-mono text-body-sm">--simulate</span> uses fake payments so you can try it with zero setup. Drop the flag (and add a funded wallet) for real testnet payments.</p>
 
-      <H2 id="circle">Circle Gateway — official SDK (production path)</H2>
-      <p className="font-body-md text-on-surface-variant">For real testnet settlement, use Circle&apos;s official x402 batching SDK (the <span className="font-data-mono text-body-sm">circlefin/arc-nanopayments</span> pattern). The <strong>buyer</strong> signs an EIP-3009 authorization off-chain (zero gas); <strong>Gateway batches</strong> many authorizations into one on-chain settlement on Arc via <span className="font-data-mono text-body-sm">POST /v1/x402/settle</span>.</p>
-      <Code lang="bash">{`npm install @circle-fin/x402-batching viem
-npm install -g @circle-fin/cli      # Circle Agent Stack: wallets, faucet, x402`}</Code>
-      <p className="font-body-md text-on-surface-variant"><strong>Buyer</strong> (the agent) — handles the whole 402 → sign → retry internally:</p>
-      <Code lang="typescript">{`import { GatewayClient } from "@circle-fin/x402-batching/client";
+      <H2 id="discovery">Agent discovery</H2>
+      <p className="font-body-md text-on-surface-variant">
+        Agents find what&apos;s for sale at a single well-known URL. It lists the available content, prices, and the
+        x402 endpoint to call — so an agent can shop your catalog without any custom integration:
+      </p>
+      <Code lang="http">{`GET /.well-known/agent-payment.json`}</Code>
 
-const client = new GatewayClient({
-  chain: "arcTestnet",
-  privateKey: process.env.BUYER_PRIVATE_KEY as \`0x\${string}\`,
-});
+      <H2 id="splits">Your earnings</H2>
+      <p className="font-body-md text-on-surface-variant">
+        Every unlock splits automatically: <strong className="text-primary">85% to you</strong>, 10% to the platform,
+        and 5% to a referrer if someone sent the reader your way (otherwise that 5% rolls into your share). Payments
+        land in the wallet you set on your <Link href="/dashboard" className="text-primary">dashboard</Link>, and your
+        running total updates in real time.
+      </p>
 
-await client.deposit("5");                 // fund the Gateway unified balance
-const { data, status } = await client.pay(url);   // pays the x402 paywall, returns content`}</Code>
-      <p className="font-body-md text-on-surface-variant">In this repo: <span className="font-data-mono text-body-sm">npm run circle -- pay &lt;url&gt;</span> / <span className="font-data-mono text-body-sm">deposit</span> / <span className="font-data-mono text-body-sm">balances</span> (live mode). <strong>Seller</strong> — protect + settle:</p>
-      <Code lang="typescript">{`import { createGatewayMiddleware, BatchFacilitatorClient } from "@circle-fin/x402-batching/server";
-
-const facilitator = new BatchFacilitatorClient({ url: "https://gateway-api-testnet.circle.com" });
-app.use(createGatewayMiddleware({ payTo: process.env.SELLER_ADDRESS, facilitator }));
-// or settle a decoded PAYMENT payload directly:
-const settlement = await facilitator.settle(paymentPayload, paymentRequirements);
-// → { success, transaction, payer, network }`}</Code>
-      <p className="font-body-sm text-on-surface-variant">Set <span className="font-data-mono text-body-sm">PAYMENTS_MODE=live</span> + <span className="font-data-mono text-body-sm">CIRCLE_API_KEY</span> + <span className="font-data-mono text-body-sm">BUYER_PRIVATE_KEY</span> and run <span className="font-data-mono text-body-sm">bash scripts/circle-setup.sh</span> to install the CLIs and create funded testnet wallets.</p>
-
-      <H2 id="onchain">On-chain marketplace (alternative)</H2>
-      <p className="font-body-md text-on-surface-variant">Prefer a whole-item, fully on-chain sale? Publish to the <span className="font-data-mono text-body-sm">AgentMarketplace</span> contract from the <Link href="/marketplace" className="text-primary">Marketplace</Link>. Buyers <span className="font-data-mono text-body-sm">approve()</span> USDC then <span className="font-data-mono text-body-sm">buyContent(id)</span>; funds go buyer→author directly, access is recorded on-chain, and agents discover new skills by listening to the <span className="font-data-mono text-body-sm">ContentPublished</span> event:</p>
-      <Code lang="typescript">{`import { createPublicClient, http, parseAbiItem } from "viem";
-const client = createPublicClient({ transport: http(process.env.ARC_RPC_URL) });
-const unwatch = client.watchEvent({
-  address: process.env.NEXT_PUBLIC_MARKETPLACE_ADDRESS,
-  event: parseAbiItem("event ContentPublished(uint256 indexed id, address indexed author, string cid, string title, uint256 price)"),
-  onLogs: (logs) => logs.forEach((l) => console.log("new skill:", l.args.title, l.args.price)),
-});`}</Code>
-
-      <H2 id="splits">Revenue splits</H2>
-      <p className="font-body-md text-on-surface-variant">Every nanopayment splits automatically: <strong className="text-primary">85% creator</strong> / 10% platform / 5% referrer. When the <span className="font-data-mono text-body-sm">RevenueSplit</span> contract is deployed and set as <span className="font-data-mono text-body-sm">payTo</span>, the split happens atomically on-chain; otherwise the creator is paid directly and the split is recorded off-chain. Your earnings update in real time on the <Link href="/creators" className="text-primary">Creator Portal</Link>.</p>
+      <H2 id="live">Going live (real payments)</H2>
+      <p className="font-body-md text-on-surface-variant">
+        Out of the box, LinePay Cite runs in <strong>simulate mode</strong> — everything works end to end, but no real
+        money moves, so it&apos;s perfect for trying things out. To settle real USDC on Arc testnet, set
+        {" "}<span className="font-data-mono text-body-sm">PAYMENTS_MODE=live</span> plus your Circle credentials. The
+        bundled Circle Gateway tooling (<span className="font-data-mono text-body-sm">npm run circle -- deposit / pay / balances</span>)
+        handles the gas-free, batched on-chain settlement for you.
+      </p>
 
       <div className="mt-stack-lg rounded-xl border border-outline-variant bg-surface-container-low p-stack-lg text-center">
-        <h3 className="font-headline-sm text-headline-sm">Ready?</h3>
-        <p className="mb-stack-md font-body-md text-on-surface-variant">Publish your first skill or article in under a minute.</p>
+        <h3 className="font-headline-sm text-headline-sm">Ready to try it?</h3>
+        <p className="mb-stack-md font-body-md text-on-surface-variant">Publish your first article or skill in under a minute.</p>
         <div className="flex justify-center gap-gutter">
-          <Link href="/creators" className="btn-primary px-8 py-3">Open Creator Portal</Link>
-          <Link href="/marketplace" className="btn-outline px-8 py-3">On-chain Marketplace</Link>
+          <Link href="/dashboard" className="btn-primary px-8 py-3">Open Creator Dashboard</Link>
+          <Link href="/marketplace" className="btn-outline px-8 py-3">Browse Marketplace</Link>
         </div>
       </div>
     </div>

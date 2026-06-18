@@ -21,7 +21,7 @@ export default function DashboardClient({ user, impersonating }: { user: User; i
     <div className="mx-auto max-w-max-width px-margin-mobile py-stack-md md:px-margin-desktop">
       {impersonating && (
         <div className="mb-4 flex items-center justify-between rounded-lg border border-orange-400 bg-orange-50 px-4 py-3 text-orange-900">
-          <span>⚠️ You are viewing as {user.name ?? user.email} — actions are disabled.</span>
+          <span className="flex items-center gap-2"><span className="material-symbols-outlined text-[18px]">warning</span>You are viewing as {user.name ?? user.email} — actions are disabled.</span>
           <button
             onClick={async () => {
               await fetch("/api/admin/impersonate", { method: "DELETE", credentials: "include" });

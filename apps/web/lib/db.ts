@@ -102,13 +102,66 @@ export function pool(): Pool {
   return _pool;
 }
 
-/** Typed query helper. Returns rows only. */
+/**
+ * Transient connection failures we should retry rather than surface. These come
+ * from the NETWORK/DNS layer (e.g. WSL2's external resolvers intermittently
+ * returning EAI_AGAIN, or a pooler dropping a half-open socket), not from SQL.
+ * They happen while *acquiring* a connection, before any statement runs, so a
+ * retry never re-executes a query.
+ */
+const TRANSIENT_CONN_CODES = new Set([
+  "EAI_AGAIN", // temporary DNS resolution failure
+  "ETIMEDOUT",
+  "ENOTFOUND",
+  "ECONNRESET",
+  "ECONNREFUSED",
+  "EPIPE",
+  "EHOSTUNREACH",
+  "ENETUNREACH",
+]);
+function isTransientConnError(e: unknown): boolean {
+  const code = (e as { code?: string })?.code;
+  if (code && TRANSIENT_CONN_CODES.has(code)) return true;
+  const msg = String((e as { message?: string })?.message ?? "");
+  return /connection timeout|Connection terminated|timeout expired|connection terminated unexpectedly/i.test(
+    msg
+  );
+}
+
+/**
+ * Acquire a pooled client, retrying transient connection errors with a short
+ * backoff. SQL/auth errors are NOT retried (they're deterministic). Bounds the
+ * worst case to ~4 quick attempts so a flaky resolver doesn't fail the whole
+ * `npm run up` (migrate/seed) on the first DNS blip.
+ */
+async function acquire(): Promise<PoolClient> {
+  const attempts = Number(process.env.PG_CONNECT_RETRIES ?? 5);
+  let lastErr: unknown;
+  for (let i = 1; i <= attempts; i++) {
+    try {
+      return await pool().connect();
+    } catch (e) {
+      lastErr = e;
+      if (!isTransientConnError(e) || i === attempts) throw e;
+      // 400, 800, 1200, 1500ms — rides through a multi-second DNS burst.
+      await new Promise((r) => setTimeout(r, Math.min(i * 400, 1500)));
+    }
+  }
+  throw lastErr;
+}
+
+/** Typed query helper. Returns rows only. Connection acquisition is retried. */
 export async function query<T extends QueryResultRow = QueryResultRow>(
   text: string,
   params: ReadonlyArray<unknown> = []
 ): Promise<T[]> {
-  const res = await pool().query<T>(text, params as unknown[]);
-  return res.rows;
+  const client = await acquire();
+  try {
+    const res = await client.query<T>(text, params as unknown[]);
+    return res.rows;
+  } finally {
+    client.release();
+  }
 }
 
 /** Query expecting a single row (or undefined). */
@@ -122,7 +175,7 @@ export async function queryOne<T extends QueryResultRow = QueryResultRow>(
 
 /** Run a function inside a transaction, rolling back on throw. */
 export async function tx<T>(fn: (client: PoolClient) => Promise<T>): Promise<T> {
-  const client = await pool().connect();
+  const client = await acquire();
   try {
     await client.query("BEGIN");
     const out = await fn(client);
@@ -144,7 +197,7 @@ const MIGRATIONS_DIR = path.resolve(process.cwd(), "db/migrations");
  * every deploy. Invoked by `npm run db:migrate`.
  */
 export async function runMigrations(): Promise<{ applied: string[] }> {
-  await pool().query(
+  await query(
     `CREATE TABLE IF NOT EXISTS _migrations (
        name TEXT PRIMARY KEY,
        applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()

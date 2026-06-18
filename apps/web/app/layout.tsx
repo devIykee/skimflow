@@ -54,7 +54,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <div className="mx-auto flex max-w-max-width flex-col items-center justify-between gap-stack-md px-margin-mobile py-stack-lg md:flex-row md:px-margin-desktop">
               <div className="label-caps text-on-surface">LINEPAY CITE</div>
               <div className="font-body-sm text-body-sm text-on-surface-variant">
-                x402 · Circle Gateway · USDC on Arc · Lepton Hackathon
+                x402 · Circle Gateway · USDC on Arc
               </div>
               <div className="flex gap-gutter">
                 <Link className="font-body-sm text-body-sm text-on-surface-variant hover:text-primary" href="/docs">Docs</Link>

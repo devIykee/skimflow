@@ -49,7 +49,7 @@ export default function HealthPanel() {
       {open && h && h.env_warnings.length > 0 && (
         <ul className="mt-4 flex flex-col gap-1">
           {h.env_warnings.map((w, i) => (
-            <li key={i} className="rounded bg-yellow-50 px-3 py-2 font-body-sm text-body-sm text-yellow-900">⚠️ {w}</li>
+            <li key={i} className="flex items-center gap-2 rounded bg-yellow-50 px-3 py-2 font-body-sm text-body-sm text-yellow-900"><span className="material-symbols-outlined text-[16px]">warning</span>{w}</li>
           ))}
         </ul>
       )}

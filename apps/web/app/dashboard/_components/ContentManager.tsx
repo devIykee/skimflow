@@ -213,7 +213,7 @@ export default function ContentManager({ impersonating }: { impersonating: boole
 
         {published && (
           <div className="mt-4 rounded-lg border border-secondary/30 bg-secondary/5 p-4">
-            <div className="mb-2 font-label-lg text-secondary">✓ Published! It&apos;s live on the marketplace. Share your links:</div>
+            <div className="mb-2 flex items-center gap-2 font-label-lg text-secondary"><span className="material-symbols-outlined text-[18px]">check_circle</span>Published! It&apos;s live on the marketplace. Share your links:</div>
             <UrlRow label="Reader URL" url={published.readerUrl} />
             {published.agentUrl && <UrlRow label="Agent endpoint" url={published.agentUrl} />}
             <Link href="/marketplace" className="mt-2 inline-block font-label-lg text-label-lg text-primary hover:underline">

@@ -170,11 +170,16 @@ DELETE FROM admin_events WHERE created_at < NOW() - INTERVAL '90 days';
 
 ### Option A — Vercel
 - **SSE** (`/api/admin/activity-stream`) is a long-lived stream. The route is
-  `runtime = "nodejs"` + `dynamic = "force-dynamic"`; on Vercel it works on
-  Node serverless functions but is bounded by the max function duration — set a
-  generous `maxDuration`, or front the admin feed with an external pub/sub.
-  The client auto-reconnects and replays via `Last-Event-ID`, so brief cutoffs
-  are recovered.
+  `runtime = "nodejs"` + `dynamic = "force-dynamic"` and ships with
+  `export const maxDuration = 60`; on Vercel the stream holds for up to 60s,
+  then the client's `EventSource` auto-reconnects and replays via `Last-Event-ID`,
+  so brief cutoffs are recovered. (Raise it on a plan that allows longer
+  functions, or front the admin feed with an external pub/sub.)
+- **Database pool on serverless:** each Vercel instance keeps its own pool, so
+  keep `PG_POOL_MAX` small (**1–3**) to avoid exhausting a connection-limited
+  pooler. Prefer Supabase's **Transaction pooler** (port **6543**) over the
+  Session pooler (5432) for serverless — it's built for many short-lived
+  connections.
 - **Async CSV export** (`runExportJob`) writes to `os.tmpdir()` and continues
   after the response — on serverless this is best-effort. For reliable large
   exports use a background queue/worker (or run on Railway/Render).

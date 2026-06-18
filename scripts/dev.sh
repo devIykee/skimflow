@@ -4,7 +4,7 @@
 #
 #   npm run up                  # install deps, ensure DB, migrate, seed, start
 #   npm run up:fresh            # also reset the local Docker DB + .next first
-#   bash scripts/dev.sh --no-traffic   # start without generating demo traffic
+#   bash scripts/dev.sh --traffic      # also generate demo agent unlocks (off by default)
 #   bash scripts/dev.sh --no-seed      # just start the server
 #   PORT=3001 npm run up        # use a different port
 #
@@ -17,11 +17,14 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-FRESH=0; SEED=1; TRAFFIC=1
+# Demo traffic is OFF by default: it writes simulate-mode unlock rows to the DB,
+# which would pollute a shared/production database. Opt in with --traffic.
+FRESH=0; SEED=1; TRAFFIC=0
 for arg in "$@"; do
   case "$arg" in
     --fresh) FRESH=1 ;;
-    --no-traffic) TRAFFIC=0 ;;
+    --traffic) TRAFFIC=1 ;;
+    --no-traffic) TRAFFIC=0 ;;  # accepted for back-compat; this is now the default
     --no-seed) SEED=0; TRAFFIC=0 ;;
     *) echo "unknown flag: $arg"; exit 1 ;;
   esac
@@ -118,8 +121,14 @@ if [ -f /tmp/linepay-dev.pid ] && kill -0 "$(cat /tmp/linepay-dev.pid)" 2>/dev/n
 fi
 
 # ── 6. Start the dev server ──────────────────────────────────────────────────
+# Preload that pins outbound fetch to IPv4 (Node/undici won't fall back from a
+# dead IPv6 route → OAuth "fetch failed" on hosts like WSL2). See the file's
+# header. Disable with UNDICI_FORCE_IPV4=0. Must be a preload, not Next's
+# instrumentation.ts (importing undici there breaks the edge bundle).
+PRELOAD="$PWD/apps/web/scripts/force-ipv4.mjs"
+DEV_NODE_OPTIONS="--import $PRELOAD${NODE_OPTIONS:+ $NODE_OPTIONS}"
 echo "▸ starting Next.js dev server…"
-( cd apps/web && PORT="$PORT" npm run dev ) >"$DEV_LOG" 2>&1 &
+( cd apps/web && PORT="$PORT" NODE_OPTIONS="$DEV_NODE_OPTIONS" npm run dev ) >"$DEV_LOG" 2>&1 &
 DEV_PID=$!
 echo "$DEV_PID" > /tmp/linepay-dev.pid
 trap 'echo; echo "▸ stopping dev server ($DEV_PID)"; kill "$DEV_PID" 2>/dev/null || true; rm -f /tmp/linepay-dev.pid' EXIT INT TERM

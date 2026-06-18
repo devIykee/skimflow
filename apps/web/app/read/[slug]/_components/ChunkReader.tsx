@@ -255,7 +255,7 @@ export default function ChunkReader(props: Props) {
               </div>
               {isNext && (
                 <div className="mt-4 flex flex-col items-center gap-3 text-center">
-                  <span className="font-label-caps text-label-caps text-outline">🔒 Block {c.blockIndex} locked</span>
+                  <span className="flex items-center gap-1.5 font-label-caps text-label-caps text-outline"><span className="material-symbols-outlined text-[16px]">lock</span>Block {c.blockIndex} locked</span>
                   {!isConnected ? (
                     <ConnectButton />
                   ) : (
@@ -273,8 +273,9 @@ export default function ChunkReader(props: Props) {
       {error && <p className="mt-4 font-body-sm text-[13px] text-primary">{error}</p>}
 
       {payable.length > 0 && unlockedPayable === payable.length && (
-        <div className="mt-8 rounded-xl border border-secondary/30 bg-secondary/5 p-6 text-center font-body-md text-secondary">
-          ✓ Fully unlocked — every block paid the creator directly.
+        <div className="mt-8 flex items-center justify-center gap-2 rounded-xl border border-secondary/30 bg-secondary/5 p-6 text-center font-body-md text-secondary">
+          <span className="material-symbols-outlined text-[20px]">check_circle</span>
+          Fully unlocked — every block paid the creator directly.
         </div>
       )}
     </div>

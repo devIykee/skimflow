@@ -9,9 +9,9 @@ const STEPS = [
 ];
 
 const FEATURES = [
-  { icon: "✍️", title: "Per-line pricing", body: "Monetize at the granular level. Readers and agents pay micro-amounts for exactly the lines they consume — from $0.000001 up." },
-  { icon: "🤖", title: "Agents welcome", body: "Built for the machine age. Autonomous agents discover your work and pay the required nanopayment instantly to cite it." },
-  { icon: "💸", title: "Automatic 85/10/5 splits", body: "Revenue is distributed in real time: 85% to you, 10% to the platform, 5% to the referrer. Transparent and on-chain." },
+  { icon: "edit_note", title: "Per-line pricing", body: "Monetize at the granular level. Readers and agents pay micro-amounts for exactly the lines they consume — from $0.000001 up." },
+  { icon: "smart_toy", title: "Agents welcome", body: "Built for the machine age. Autonomous agents discover your work and pay the required nanopayment instantly to cite it." },
+  { icon: "payments", title: "Automatic 85/10/5 splits", body: "Revenue is distributed in real time: 85% to you, 10% to the platform, 5% to the referrer. Transparent and on-chain." },
 ];
 
 export default function Home() {
@@ -20,9 +20,6 @@ export default function Home() {
       {/* Hero */}
       <section className="px-margin-mobile py-24 text-center md:px-margin-desktop md:py-32">
         <div className="mx-auto max-w-4xl space-y-stack-lg">
-          <span className="inline-block rounded-full border border-outline-variant px-3 py-1 font-label-caps text-label-caps text-primary">
-            LEPTON AGENTS HACKATHON · RFB 6 — CREATOR &amp; PUBLISHER MONETIZATION
-          </span>
           <h1 className="font-display-lg text-display-lg-mobile tracking-tight md:text-display-lg">
             Get paid every time someone reads a line of your story.
           </h1>
@@ -48,7 +45,7 @@ export default function Home() {
           <div className="grid grid-cols-1 gap-gutter md:grid-cols-3">
             {FEATURES.map((f) => (
               <div key={f.title} className="card flex flex-col">
-                <div className="mb-stack-md text-4xl">{f.icon}</div>
+                <span className="material-symbols-outlined mb-stack-md text-[40px] text-primary">{f.icon}</span>
                 <h3 className="mb-stack-md font-headline-sm text-headline-sm">{f.title}</h3>
                 <p className="font-body-md text-body-md text-on-surface-variant">{f.body}</p>
               </div>

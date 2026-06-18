@@ -13,15 +13,15 @@ interface FeedEvent {
   created_at: string;
 }
 
-const BADGE: Record<string, { icon: string; label: string }> = {
-  UNLOCK: { icon: "🟢", label: "UNLOCK" },
-  AGENT_UNLOCK: { icon: "🔵", label: "AGENT_UNLOCK" },
-  PUBLISH: { icon: "🟡", label: "PUBLISH" },
-  SIGNUP: { icon: "🟣", label: "SIGNUP" },
-  PAYOUT: { icon: "🔴", label: "PAYOUT" },
-  "402_HIT": { icon: "⚪", label: "402_HIT" },
-  WEBHOOK_REJECTED: { icon: "🟠", label: "WEBHOOK_REJECTED" },
-  IMPERSONATE: { icon: "⛔", label: "IMPERSONATE" },
+const BADGE: Record<string, { icon: string; label: string; color: string }> = {
+  UNLOCK: { icon: "lock_open", label: "UNLOCK", color: "text-green-600" },
+  AGENT_UNLOCK: { icon: "smart_toy", label: "AGENT_UNLOCK", color: "text-blue-600" },
+  PUBLISH: { icon: "publish", label: "PUBLISH", color: "text-amber-600" },
+  SIGNUP: { icon: "person_add", label: "SIGNUP", color: "text-purple-600" },
+  PAYOUT: { icon: "payments", label: "PAYOUT", color: "text-rose-600" },
+  "402_HIT": { icon: "request_quote", label: "402_HIT", color: "text-on-surface-variant" },
+  WEBHOOK_REJECTED: { icon: "report", label: "WEBHOOK_REJECTED", color: "text-orange-600" },
+  IMPERSONATE: { icon: "visibility", label: "IMPERSONATE", color: "text-red-700" },
 };
 
 function relTime(iso: string): string {
@@ -123,14 +123,15 @@ export default function ActivityFeed() {
         )}
         <ul className="flex flex-col gap-1">
           {events.map((e) => {
-            const b = BADGE[e.event_type] ?? { icon: "•", label: e.event_type };
+            const b = BADGE[e.event_type] ?? { icon: "circle", label: e.event_type, color: "text-on-surface-variant" };
             return (
               <li key={e.id} className="flex items-center gap-3 border-b border-outline-variant py-2 text-body-sm">
                 <span title={new Date(e.created_at).toLocaleString()} className="w-16 shrink-0 font-data-mono text-[11px] text-outline">
                   {relTime(e.created_at)}
                 </span>
-                <span className="w-40 shrink-0 font-label-caps text-label-caps">
-                  {b.icon} {b.label}
+                <span className="flex w-40 shrink-0 items-center gap-1.5 font-label-caps text-label-caps">
+                  <span className={`material-symbols-outlined text-[16px] ${b.color}`}>{b.icon}</span>
+                  {b.label}
                 </span>
                 <span className="flex-grow text-on-surface-variant">{describe(e)}</span>
               </li>

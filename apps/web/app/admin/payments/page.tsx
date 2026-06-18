@@ -124,7 +124,12 @@ export default function PaymentsPage() {
                   )}
                 </td>
                 <td>{p.creator_name ?? (p.creator_handle ? `@${p.creator_handle}` : <span className="text-outline">—</span>)}</td>
-                <td className="font-data-mono text-[11px]">{p.payer_kind === "agent" ? "🤖 " : ""}{trunc(p.payer_id)}</td>
+                <td className="font-data-mono text-[11px]">
+                  <span className="inline-flex items-center gap-1">
+                    {p.payer_kind === "agent" && <span className="material-symbols-outlined text-[14px] text-blue-600" title="Agent">smart_toy</span>}
+                    {trunc(p.payer_id)}
+                  </span>
+                </td>
                 <td>{p.block_index}</td>
                 <td>${Number(p.gross_amount).toFixed(4)}</td>
                 <td>${Number(p.creator_amount).toFixed(4)}</td>

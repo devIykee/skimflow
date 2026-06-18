@@ -7,6 +7,10 @@ import type { AdminEvent } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+// On serverless (Vercel) a function is capped at its platform timeout. Hold the
+// SSE stream for up to 60s, then let the browser's EventSource auto-reconnect
+// (Last-Event-ID replay picks up any events missed during the gap).
+export const maxDuration = 60;
 
 const POLL_MS = 2000;
 
