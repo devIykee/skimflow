@@ -41,7 +41,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <div className="hidden items-center gap-stack-lg md:flex">
                 <NavLink href="/">Home</NavLink>
                 <NavLink href="/for-you">For You</NavLink>
-                <NavLink href="/dashboard">Dashboard</NavLink>
                 <NavLink href="/docs">Docs</NavLink>
               </div>
               <UserMenu />

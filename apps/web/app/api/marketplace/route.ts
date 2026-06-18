@@ -8,8 +8,12 @@ export const dynamic = "force-dynamic";
 /** GET — public marketplace listing with filters. No auth required. */
 export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams;
+  const type = (sp.get("type") as ContentType | null) ?? undefined;
   const rows = await listPublished({
-    contentType: (sp.get("type") as ContentType | null) ?? undefined,
+    contentType: type,
+    // The "All" feed (no type filter) mixes human content — articles + X posts —
+    // but NOT agent skills, which live only in their own tab.
+    excludeTypes: type ? undefined : ["agent-skills"],
     minPrice: sp.get("minPrice") ?? undefined,
     maxPrice: sp.get("maxPrice") ?? undefined,
     sort: (sp.get("sort") as "newest" | "popular" | null) ?? undefined,

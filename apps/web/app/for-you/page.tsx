@@ -28,19 +28,19 @@ interface FeedItem {
   agentUrl?: string | null;
 }
 
-type TabKey = "all" | "article" | "agent-skills" | "pathway";
+type TabKey = "all" | "article" | "agent-skills" | "x-post";
 
 const TABS: { key: TabKey; label: string }[] = [
   { key: "all", label: "All" },
   { key: "article", label: "Articles" },
   { key: "agent-skills", label: "Agent Skills" },
-  { key: "pathway", label: "Pathways" },
+  { key: "x-post", label: "Posts" },
 ];
 
 const TYPE_LABEL: Record<string, string> = {
   article: "Article",
   "agent-skills": "Agent Skills",
-  pathway: "Pathway",
+  "x-post": "X Post",
 };
 
 const PAGE = 12;
@@ -120,7 +120,11 @@ export default function ForYouPage() {
         const pageFull = raw.length === PAGE; // server returned a full page → maybe more
         // Client-side refinements the API doesn't cover.
         let rows = raw;
-        if (searching && tab !== "all") rows = rows.filter((r) => r.contentType === tab);
+        if (searching) {
+          // Search hits all types; keep the active tab's content. "All" mixes
+          // human content (articles + posts) but never agent skills.
+          rows = rows.filter((r) => (tab === "all" ? r.contentType !== "agent-skills" : r.contentType === tab));
+        }
         if (verifiedOnly && !searching) rows = rows.filter((r) => r.creatorVerified);
 
         offsetRef.current = offset + PAGE;
@@ -268,10 +272,15 @@ export default function ForYouPage() {
               <p className="mb-4 line-clamp-3 flex-grow font-body-sm text-body-sm text-on-surface-variant">{c.summary}</p>
             )}
 
-            <div className="mt-auto flex items-center justify-between border-t border-outline-variant/60 pt-3">
-              <div className="flex items-center gap-2">
+            <div className="mt-auto flex items-center justify-between gap-2 border-t border-outline-variant/60 pt-3">
+              <div className="flex min-w-0 items-center gap-2">
                 <Avatar name={c.creatorName ?? c.creatorHandle} src={c.creatorAvatar} />
-                <span className="font-data-mono text-[12px] text-outline">@{c.creatorHandle ?? "unknown"}</span>
+                <span className="flex min-w-0 flex-col leading-tight">
+                  {c.creatorName && (
+                    <span className="truncate font-body-sm text-[12px] text-on-surface">{c.creatorName}</span>
+                  )}
+                  <span className="truncate font-data-mono text-[11px] text-outline">@{c.creatorHandle ?? "unknown"}</span>
+                </span>
               </div>
               <div className="flex items-center gap-2 font-data-mono text-[12px]">
                 {typeof c.blockCount === "number" && c.blockCount > 0 && (
@@ -349,14 +358,13 @@ function EmptyState({ tab, q }: { tab: TabKey; q: string }) {
       </div>
     );
   }
-  if (tab === "pathway") {
+  if (tab === "x-post") {
     return (
       <div className="mt-2 flex flex-col items-center gap-2 rounded-xl border border-dashed border-outline-variant bg-surface-container-lowest p-10 text-center">
-        <span className="material-symbols-outlined text-[28px] text-primary">route</span>
-        <h3 className="font-headline-sm text-headline-sm">Pathways are coming soon</h3>
+        <span className="material-symbols-outlined text-[28px] text-primary">tag</span>
+        <h3 className="font-headline-sm text-headline-sm">No posts yet</h3>
         <p className="max-w-md font-body-sm text-body-sm text-on-surface-variant">
-          Pathways bundle articles and agent skills into a guided, multi-step journey. Once creators
-          start publishing them, they&apos;ll show up right here.
+          Imported X posts show up here. Creators can bring in a post from the dashboard and monetize it.
         </p>
       </div>
     );

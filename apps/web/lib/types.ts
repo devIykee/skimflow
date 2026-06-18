@@ -6,7 +6,7 @@
  * with lib/money.ts for arithmetic.
  */
 export type UserRole = "creator" | "admin";
-export type ContentType = "article" | "agent-skills";
+export type ContentType = "article" | "agent-skills" | "x-post";
 export type ContentStatus = "draft" | "published" | "suspended";
 export type PayerKind = "human" | "agent";
 export type LedgerStatus = "pending" | "completed" | "failed";
@@ -23,6 +23,7 @@ export interface User {
   role: UserRole;
   handle: string | null;
   display_name: string | null;
+  bio: string | null;
   verified: boolean;
   github_username: string | null;
   verify_code: string | null;

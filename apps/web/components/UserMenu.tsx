@@ -78,6 +78,7 @@ export default function UserMenu() {
 
               <div className="border-t border-outline-variant py-1">
                 <MenuLink href="/dashboard" icon="dashboard" label="Creator dashboard" onClick={() => setOpen(false)} />
+                <MenuLink href="/dashboard/settings" icon="settings" label="Profile settings" onClick={() => setOpen(false)} />
                 {isAdmin && <MenuLink href="/admin" icon="shield_person" label="Admin console" onClick={() => setOpen(false)} />}
               </div>
 

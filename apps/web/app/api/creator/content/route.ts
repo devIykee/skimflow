@@ -60,7 +60,8 @@ export async function POST(req: NextRequest) {
 
     if (!body.title?.trim()) return Response.json({ error: "missing_title" }, { status: 400 });
     if (!body.body?.trim()) return Response.json({ error: "missing_body" }, { status: 400 });
-    const contentType: ContentType = body.contentType === "agent-skills" ? "agent-skills" : "article";
+    const contentType: ContentType =
+      body.contentType === "agent-skills" ? "agent-skills" : body.contentType === "x-post" ? "x-post" : "article";
 
     let pricePerBlock: string;
     try {

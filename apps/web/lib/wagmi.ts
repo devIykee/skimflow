@@ -46,8 +46,14 @@ export const arcTestnet = defineChain({
  * Wagmi + RainbowKit config. `ssr: true` is required for Next.js App Router so
  * the wallet state hydrates correctly.
  */
+// Shown in the wallet app during a WalletConnect (mobile QR / deep-link) connect.
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "https://linepay-ten.vercel.app";
+
 export const wagmiConfig = getDefaultConfig({
-  appName: "LinePay Agent Marketplace",
+  appName: "LinePay Cite",
+  appDescription: "Pay-per-block content for humans and agents, settled in USDC on Arc.",
+  appUrl: APP_URL,
+  appIcon: `${APP_URL.replace(/\/$/, "")}/favicon.ico`,
   projectId: WC_PROJECT_ID,
   chains: [arcTestnet],
   ssr: true,

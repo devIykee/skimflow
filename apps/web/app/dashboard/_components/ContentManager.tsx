@@ -28,7 +28,7 @@ export default function ContentManager({ impersonating }: { impersonating: boole
   const toast = useToast();
   const [list, setList] = useState<ContentRow[]>([]);
   const [title, setTitle] = useState("");
-  const [contentType, setContentType] = useState<"article" | "agent-skills">("article");
+  const [contentType, setContentType] = useState<"article" | "agent-skills" | "x-post">("article");
   const [body, setBody] = useState("");
   const [summary, setSummary] = useState("");
   const [tags, setTags] = useState("");
@@ -93,7 +93,7 @@ export default function ContentManager({ impersonating }: { impersonating: boole
       if (r.ok) {
         setTitle(d.title ?? title);
         setBody(d.content ?? "");
-        setContentType(d.format === "markdown" ? "agent-skills" : "article");
+        setContentType(d.contentType ?? (d.format === "markdown" ? "agent-skills" : "article"));
         setSourceUrl(d.sourceUrl ?? importUrl);
         setSourcePlatform(d.sourcePlatform ?? null);
         setVerify(null);
@@ -227,9 +227,10 @@ export default function ContentManager({ impersonating }: { impersonating: boole
         <div className="flex flex-col gap-3">
           <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Title" className="rounded-lg border border-outline px-3 py-2 text-body-md" />
           <div className="flex flex-wrap gap-3">
-            <select value={contentType} onChange={(e) => setContentType(e.target.value as "article" | "agent-skills")} className="rounded-lg border border-outline px-3 py-2 text-body-sm">
+            <select value={contentType} onChange={(e) => setContentType(e.target.value as "article" | "agent-skills" | "x-post")} className="rounded-lg border border-outline px-3 py-2 text-body-sm">
               <option value="article">Article (per-paragraph)</option>
               <option value="agent-skills">Agent Skills (per-block)</option>
+              <option value="x-post">X Post</option>
             </select>
             <div className="flex items-center gap-2">
               <input value={price} onChange={(e) => setPrice(e.target.value)} className="w-28 rounded-lg border border-outline px-3 py-2 font-data-mono text-body-sm" />

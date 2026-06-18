@@ -128,6 +128,48 @@ export function touchUser(id: string): Promise<unknown> {
   return query(`UPDATE users SET last_active_at = NOW() WHERE id = $1`, [id]);
 }
 
+/** Normalize a user-chosen handle to the stored slug form (≤24 chars). */
+export function normalizeHandle(raw: string): string {
+  return slugify(raw);
+}
+
+/** True if `handle` is already used by a DIFFERENT user. */
+export async function isHandleTaken(handle: string, exceptUserId: string): Promise<boolean> {
+  const row = await queryOne<{ id: string }>(
+    `SELECT id FROM users WHERE handle = $1 AND id <> $2 LIMIT 1`,
+    [handle, exceptUserId]
+  );
+  return !!row;
+}
+
+export interface ProfileUpdate {
+  displayName: string;
+  handle: string;
+  bio: string;
+}
+
+/**
+ * Update a creator's editable profile fields. Handle uniqueness is enforced by
+ * the unique index; on a race we surface a typed conflict instead of a 500.
+ */
+export async function updateProfile(
+  userId: string,
+  p: ProfileUpdate
+): Promise<{ ok: true; user: User } | { ok: false; reason: "handle_taken" }> {
+  try {
+    const user = await queryOne<User>(
+      `UPDATE users SET display_name = $2, handle = $3, bio = $4 WHERE id = $1 RETURNING *`,
+      [userId, p.displayName, p.handle, p.bio]
+    );
+    if (!user) throw new Error("profile update affected no row");
+    return { ok: true, user };
+  } catch (e) {
+    // 23505 = unique_violation (handle collided with another user).
+    if ((e as { code?: string })?.code === "23505") return { ok: false, reason: "handle_taken" };
+    throw e;
+  }
+}
+
 /** Store a validated (EIP-55) wallet address. Caller must validate first. */
 export function setUserWallet(id: string, wallet: string): Promise<User | undefined> {
   return queryOne<User>(
@@ -319,6 +361,8 @@ export function listContentByCreator(creatorId: string): Promise<Content[]> {
 
 export interface MarketplaceFilters {
   contentType?: ContentType;
+  /** Content types to exclude (e.g. exclude 'x-post' from the All feed). */
+  excludeTypes?: ContentType[];
   minPrice?: string;
   maxPrice?: string;
   sort?: "newest" | "popular";
@@ -332,6 +376,12 @@ export function listPublished(f: MarketplaceFilters = {}): Promise<ContentWithCr
   if (f.contentType) {
     params.push(f.contentType);
     where.push(`c.content_type = $${params.length}`);
+  } else if (f.excludeTypes && f.excludeTypes.length) {
+    const placeholders = f.excludeTypes.map((t) => {
+      params.push(t);
+      return `$${params.length}`;
+    });
+    where.push(`c.content_type NOT IN (${placeholders.join(",")})`);
   }
   if (f.minPrice) {
     params.push(f.minPrice);

@@ -1,6 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
+import { useAccount } from "wagmi";
+import { ConnectButton } from "@rainbow-me/rainbowkit";
 import ContentManager from "./ContentManager";
 import EarningsPanel from "./EarningsPanel";
 
@@ -34,9 +37,17 @@ export default function DashboardClient({ user, impersonating }: { user: User; i
         </div>
       )}
 
-      <header className="mb-6">
-        <h1 className="mb-1 font-display-lg text-display-lg-mobile md:text-display-lg">Creator Dashboard</h1>
-        <p className="font-body-sm text-body-sm text-on-surface-variant">{user.email}</p>
+      <header className="mb-6 flex items-start justify-between gap-3">
+        <div>
+          <h1 className="mb-1 font-display-lg text-display-lg-mobile md:text-display-lg">Creator Dashboard</h1>
+          <p className="font-body-sm text-body-sm text-on-surface-variant">
+            {user.handle ? `@${user.handle} · ` : ""}{user.email}
+          </p>
+        </div>
+        <Link href="/dashboard/settings" className="btn-outline flex shrink-0 items-center gap-1 px-4 py-2 text-label-lg">
+          <span className="material-symbols-outlined text-[18px]">settings</span>
+          <span className="hidden sm:inline">Settings</span>
+        </Link>
       </header>
 
       {!walletLinked && !impersonating && <WalletBanner onLinked={() => setWalletLinked(true)} />}
@@ -62,6 +73,14 @@ function WalletBanner({ onLinked }: { onLinked: () => void }) {
   const [wallet, setWallet] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const { address, isConnected } = useAccount();
+  const editedRef = useRef(false); // don't clobber a manually-typed address
+
+  // Auto-fill the payout address from the connected wallet (until the user
+  // types their own).
+  useEffect(() => {
+    if (address && !editedRef.current) setWallet(address);
+  }, [address]);
 
   async function link() {
     setBusy(true);
@@ -84,10 +103,16 @@ function WalletBanner({ onLinked }: { onLinked: () => void }) {
   return (
     <div className="mb-6 rounded-lg border border-yellow-400 bg-yellow-50 px-4 py-4">
       <div className="mb-2 font-label-lg text-yellow-900">Add your wallet to receive payments</div>
+      {!isConnected && (
+        <div className="mb-3">
+          <ConnectButton accountStatus="address" chainStatus="none" showBalance={false} />
+          <p className="mt-1 font-body-sm text-[12px] text-yellow-800">Connect your wallet and we&apos;ll fill in your payout address automatically.</p>
+        </div>
+      )}
       <div className="flex flex-wrap gap-2">
         <input
           value={wallet}
-          onChange={(e) => setWallet(e.target.value)}
+          onChange={(e) => { editedRef.current = true; setWallet(e.target.value); }}
           placeholder="0x… your USDC payout address on Arc"
           className="flex-grow rounded-lg border border-outline px-3 py-2 font-data-mono text-body-sm"
         />
@@ -95,6 +120,9 @@ function WalletBanner({ onLinked }: { onLinked: () => void }) {
           {busy ? "Validating…" : "Link wallet"}
         </button>
       </div>
+      {isConnected && address && wallet.toLowerCase() === address.toLowerCase() && (
+        <p className="mt-2 font-body-sm text-[12px] text-yellow-800">Using your connected wallet. Edit the field to use a different payout address.</p>
+      )}
       {error && <p className="mt-2 font-body-sm text-[13px] text-red-600">{error}</p>}
     </div>
   );
