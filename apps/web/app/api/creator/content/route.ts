@@ -60,7 +60,8 @@ export async function POST(req: NextRequest) {
 
     if (!body.title?.trim()) return Response.json({ error: "missing_title" }, { status: 400 });
     if (!body.body?.trim()) return Response.json({ error: "missing_body" }, { status: 400 });
-    const contentType: ContentType = body.contentType === "agent-skills" ? "agent-skills" : "article";
+    const contentType: ContentType =
+      body.contentType === "agent-skills" ? "agent-skills" : body.contentType === "x-post" ? "x-post" : "article";
 
     let pricePerBlock: string;
     try {
@@ -86,7 +87,15 @@ export async function POST(req: NextRequest) {
       process.env.GATEWAY_WALLET_ADDRESS ||
       "0x0077777d7EBA4688BDeF3E311b846F25870A19B9";
 
-    const status = body.status === "published" ? "published" : "draft";
+    const requestedStatus = body.status === "published" ? "published" : "draft";
+
+    // Wallet gate: you can't publish (and start earning) without a payout
+    // wallet. Rather than reject and lose the work, downgrade to a draft and
+    // tell the client so it can prompt wallet creation, then re-publish.
+    const hasWallet = !!user.wallet_address || !!user.embedded_wallet_address;
+    const walletGated = requestedStatus === "published" && !hasWallet;
+    const status = walletGated ? "draft" : requestedStatus;
+
     const isFirstPublish = status === "published" && (await creatorPublishedCount(user.id)) === 0;
 
     // Ownership verification: if this piece was imported, RE-VERIFY server-side
@@ -141,6 +150,23 @@ export async function POST(req: NextRequest) {
       if (isFirstPublish && user.email) {
         notifyFirstPublish({ to: user.email, name: user.display_name ?? undefined, title: content.title, readerUrl, agentUrl });
       }
+    }
+
+    if (walletGated) {
+      // Saved as a draft instead of published — surface that clearly so the UI
+      // can route the creator into wallet creation and offer to publish after.
+      return Response.json(
+        {
+          content,
+          readerUrl,
+          agentUrl,
+          walletRequired: true,
+          draftSaved: true,
+          contentId: content.id,
+          message: "Saved to drafts — create a payout wallet to publish and start earning.",
+        },
+        { status: 200 }
+      );
     }
 
     return Response.json({ content, readerUrl, agentUrl });

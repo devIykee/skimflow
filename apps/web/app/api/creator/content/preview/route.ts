@@ -27,7 +27,15 @@ export async function POST(req: NextRequest) {
     const contentType: ContentType = b.contentType === "agent-skills" ? "agent-skills" : "article";
     const format = contentType === "agent-skills" ? "markdown" : "article";
     const chunks = chunkContent({ content: b.body ?? "", format });
-    const price = normalizeUsdc(b.pricePerBlock ?? "0");
+    // The price arrives live as the user types, so it can be mid-edit ("", "0.",
+    // ".5"). normalizeUsdc throws on those — treat anything unparseable as 0 so
+    // the preview never 500s (real validation happens on publish).
+    let price: string;
+    try {
+      price = normalizeUsdc(b.pricePerBlock ?? "0");
+    } catch {
+      price = "0";
+    }
 
     const payableCount = contentType === "agent-skills" ? chunks.length : Math.max(0, chunks.length - 1);
     const split = previewSplit(price, b.hasReferrer ?? false);

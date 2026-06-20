@@ -9,6 +9,8 @@ import {
   getUserById,
   insertLedger,
   recordAdminEvent,
+  setLedgerAttestation,
+  setLedgerMintTx,
 } from "@/lib/store";
 import {
   arc,
@@ -209,8 +211,12 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ slug: stri
         // completed once RevenueSplit.split lands on Arc.
         after(async () => {
           try {
+            // Persist the attestation FIRST so a failed mint/split below leaves a
+            // retryable pending row (admin → Payments → Retry settle).
+            await setLedgerAttestation(salt, burn.attestation, burn.signature);
             await ensureRevenueSplitApproval();
-            await relayMint(burn.attestation, burn.signature);
+            const mintTx = await relayMint(burn.attestation, burn.signature);
+            await setLedgerMintTx(salt, mintTx);
             const splitTx = await splitOnChain(creatorWallet, referrerWallet, amountWei);
             await finalizeLedgerByToken(salt, splitTx);
             void sendEarningNotification({

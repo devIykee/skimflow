@@ -37,8 +37,7 @@ export default function ContentPage() {
     return () => clearTimeout(t);
   }, [load]);
 
-  async function suspend(id: string) {
-    const reason = window.prompt("Reason for suspension?") ?? "Suspended by admin";
+  async function suspend(id: string, reason: string) {
     setBusy(id);
     try {
       await fetch(`/api/admin/content/${id}/suspend`, {
@@ -51,6 +50,10 @@ export default function ContentPage() {
     } finally {
       setBusy(null);
     }
+  }
+  /** One-click hide from the For You feed (suspend with a default reason). */
+  function hide(id: string) {
+    return suspend(id, "Hidden from feed by admin");
   }
   async function reinstate(id: string) {
     setBusy(id);
@@ -101,13 +104,21 @@ export default function ContentPage() {
                 <td><span className="pill">{c.content_type}</span></td>
                 <td>${Number(c.price_per_block).toFixed(4)}</td>
                 <td>${Number(c.total_earned).toFixed(4)}</td>
-                <td>{c.status === "suspended" ? <span className="text-red-600">suspended</span> : c.status}</td>
+                <td>
+                  {c.status === "suspended" ? (
+                    <span className="inline-flex items-center gap-1 text-red-600"><span className="material-symbols-outlined text-[14px]">visibility_off</span>hidden</span>
+                  ) : c.status === "published" ? (
+                    <span className="text-secondary">on feed</span>
+                  ) : (
+                    c.status
+                  )}
+                </td>
                 <td className="flex flex-wrap gap-1 py-2">
                   <Link href={`/read/${c.slug}`} className="btn-outline px-2 py-1 text-[11px]">View</Link>
                   {c.status === "suspended" ? (
-                    <button disabled={busy === c.id} onClick={() => reinstate(c.id)} className="btn-outline px-2 py-1 text-[11px]">Reinstate</button>
+                    <button disabled={busy === c.id} onClick={() => reinstate(c.id)} className="btn-outline px-2 py-1 text-[11px] text-secondary">Show on feed</button>
                   ) : (
-                    <button disabled={busy === c.id} onClick={() => suspend(c.id)} className="btn-outline px-2 py-1 text-[11px]">Suspend</button>
+                    <button disabled={busy === c.id} onClick={() => hide(c.id)} className="btn-outline px-2 py-1 text-[11px]" title="Remove from the For You feed">Hide from feed</button>
                   )}
                   <button disabled={busy === c.id} onClick={() => del(c.id)} className="btn-outline px-2 py-1 text-[11px] text-red-600">Delete</button>
                 </td>

@@ -15,9 +15,13 @@ import {
   createWalletClient,
   defineChain,
   erc20Abi,
+  formatEther,
+  formatUnits,
   getAddress,
   http,
   maxUint256,
+  parseEther,
+  parseUnits,
   recoverTypedDataAddress,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
@@ -257,5 +261,57 @@ export async function splitOnChain(creator: Address, referrer: Address | null, v
   });
   await publicClient.waitForTransactionReceipt({ hash });
   return hash;
+}
+
+// ── Admin testnet funding (relayer → users) ──────────────────────────────────
+
+/** Send native Arc gas (USDC at 18 decimals) from the relayer to `to`. */
+export async function sendGas(to: Address, amountEth: string): Promise<Hex> {
+  const { account, wallet, publicClient } = getRelayer();
+  const hash = await wallet.sendTransaction({
+    account,
+    chain: arcChain,
+    to: getAddress(to),
+    value: parseEther(amountEth),
+  });
+  await publicClient.waitForTransactionReceipt({ hash });
+  return hash;
+}
+
+/** Transfer ERC-20 USDC (6 decimals) from the relayer to `to`. */
+export async function sendUsdc(to: Address, amount6: string): Promise<Hex> {
+  const { account, wallet, publicClient } = getRelayer();
+  const hash = await wallet.writeContract({
+    address: getAddress(arc.usdcAddress),
+    abi: erc20Abi,
+    functionName: "transfer",
+    args: [getAddress(to), parseUnits(amount6, 6)],
+    account,
+    chain: arcChain,
+  });
+  await publicClient.waitForTransactionReceipt({ hash });
+  return hash;
+}
+
+/** A read-only Arc public client (shared chain definition) for balance reads. */
+export function arcReadClient() {
+  return createPublicClient({ chain: arcChain, transport: http(arc.rpcUrl) });
+}
+
+/** Read an address's ERC-20 USDC (6-dec) + native gas (18-dec) as display strings. */
+export async function readBalances(
+  address: Address
+): Promise<{ usdc: string; gas: string }> {
+  const client = arcReadClient();
+  const [bal, native] = await Promise.all([
+    client.readContract({
+      address: getAddress(arc.usdcAddress),
+      abi: erc20Abi,
+      functionName: "balanceOf",
+      args: [getAddress(address)],
+    }) as Promise<bigint>,
+    client.getBalance({ address: getAddress(address) }),
+  ]);
+  return { usdc: formatUnits(bal, 6), gas: formatEther(native) };
 }
 

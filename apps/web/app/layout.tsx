@@ -4,6 +4,7 @@ import Link from "next/link";
 import Providers from "./providers";
 import UserMenu from "@/components/UserMenu";
 import { Analytics } from '@vercel/analytics/next';
+import MobileNav from "@/components/MobileNav";
 
 export const metadata: Metadata = {
   title: "LinePay Cite — get paid every time someone reads a line",
@@ -40,16 +41,15 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 LinePay <span>Cite</span>
               </Link>
               <div className="hidden items-center gap-stack-lg md:flex">
-                <NavLink href="/">Home</NavLink>
                 <NavLink href="/for-you">For You</NavLink>
-                <NavLink href="/dashboard">Dashboard</NavLink>
                 <NavLink href="/docs">Docs</NavLink>
               </div>
               <UserMenu />
             </nav>
           </header>
 
-          <main className="flex-grow">{children}</main>
+          {/* pb on mobile keeps content clear of the fixed bottom nav. */}
+          <main className="flex-grow pb-16 md:pb-0">{children}</main>
 
           <footer className="border-t border-outline-variant bg-surface-container-low">
             <div className="mx-auto flex max-w-max-width flex-col items-center justify-between gap-stack-md px-margin-mobile py-stack-lg md:flex-row md:px-margin-desktop">
@@ -64,6 +64,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               </div>
             </div>
           </footer>
+
+          <MobileNav />
         </Providers>
         <Analytics />
       </body>

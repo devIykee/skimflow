@@ -1,5 +1,11 @@
+import { redirect } from "next/navigation";
 import Link from "next/link";
 import StatsBar from "@/components/StatsBar";
+import { currentSession } from "@/lib/session";
+
+// Authenticated visitors don't need the marketing page — send them straight to
+// their feed. Server-side redirect (no client flash of the landing page).
+export const dynamic = "force-dynamic";
 
 const STEPS = [
   { code: "HTTP 402 Required", text: "A reader or agent requests a paid line range and the server returns a payment-required status with a machine-readable x402 quote." },
@@ -14,7 +20,10 @@ const FEATURES = [
   { icon: "payments", title: "Automatic 85/10/5 splits", body: "Revenue is distributed in real time: 85% to you, 10% to the platform, 5% to the referrer. Transparent and on-chain." },
 ];
 
-export default function Home() {
+export default async function Home() {
+  const session = await currentSession();
+  if (session?.user?.id) redirect("/for-you");
+
   return (
     <>
       {/* Hero */}

@@ -123,16 +123,113 @@ export function getUserByEmail(email: string): Promise<User | undefined> {
 export function getUserByHandle(handle: string): Promise<User | undefined> {
   return queryOne<User>(`SELECT * FROM users WHERE handle = $1`, [handle]);
 }
+export function getUsersByIds(ids: string[]): Promise<User[]> {
+  if (!ids.length) return Promise.resolve([]);
+  return query<User>(`SELECT * FROM users WHERE id = ANY($1::uuid[])`, [ids]);
+}
 
 export function touchUser(id: string): Promise<unknown> {
   return query(`UPDATE users SET last_active_at = NOW() WHERE id = $1`, [id]);
 }
 
-/** Store a validated (EIP-55) wallet address. Caller must validate first. */
+/** Normalize a user-chosen handle to the stored slug form (≤24 chars). */
+export function normalizeHandle(raw: string): string {
+  return slugify(raw);
+}
+
+/** True if `handle` is already used by a DIFFERENT user. */
+export async function isHandleTaken(handle: string, exceptUserId: string): Promise<boolean> {
+  const row = await queryOne<{ id: string }>(
+    `SELECT id FROM users WHERE handle = $1 AND id <> $2 LIMIT 1`,
+    [handle, exceptUserId]
+  );
+  return !!row;
+}
+
+export interface ProfileUpdate {
+  displayName: string;
+  handle: string;
+  bio: string;
+}
+
+/**
+ * Update a creator's editable profile fields. Handle uniqueness is enforced by
+ * the unique index; on a race we surface a typed conflict instead of a 500.
+ */
+export async function updateProfile(
+  userId: string,
+  p: ProfileUpdate
+): Promise<{ ok: true; user: User } | { ok: false; reason: "handle_taken" }> {
+  try {
+    const user = await queryOne<User>(
+      `UPDATE users SET display_name = $2, handle = $3, bio = $4 WHERE id = $1 RETURNING *`,
+      [userId, p.displayName, p.handle, p.bio]
+    );
+    if (!user) throw new Error("profile update affected no row");
+    return { ok: true, user };
+  } catch (e) {
+    // 23505 = unique_violation (handle collided with another user).
+    if ((e as { code?: string })?.code === "23505") return { ok: false, reason: "handle_taken" };
+    throw e;
+  }
+}
+
+/**
+ * Store a validated (EIP-55) external wallet as the active payout. Caller must
+ * validate first. Marks the payout source 'external' (the user explicitly
+ * connected their own wallet, overriding any embedded default).
+ */
 export function setUserWallet(id: string, wallet: string): Promise<User | undefined> {
   return queryOne<User>(
-    `UPDATE users SET wallet_address = $2 WHERE id = $1 RETURNING *`,
+    `UPDATE users SET wallet_address = $2, wallet_source = 'external' WHERE id = $1 RETURNING *`,
     [id, wallet]
+  );
+}
+
+/**
+ * Persist a freshly-provisioned embedded (Circle User-Controlled) wallet. If the
+ * user has never connected an external wallet, the embedded wallet also becomes
+ * the active payout — so revenue routes there with zero copy/paste (default
+ * routing). An existing external payout is left untouched.
+ */
+export function setEmbeddedWallet(
+  id: string,
+  walletId: string,
+  address: string
+): Promise<User | undefined> {
+  return queryOne<User>(
+    `UPDATE users
+       SET embedded_wallet_id = $2,
+           embedded_wallet_address = $3,
+           wallet_address = CASE WHEN wallet_address IS NULL THEN $3 ELSE wallet_address END,
+           wallet_source  = CASE WHEN wallet_address IS NULL THEN 'embedded' ELSE wallet_source END
+     WHERE id = $1 RETURNING *`,
+    [id, walletId, address]
+  );
+}
+
+/**
+ * Switch which wallet receives payouts. Points `wallet_address` at the embedded
+ * or the stored external address. Returns undefined if the requested wallet
+ * isn't set yet (caller surfaces a friendly error).
+ */
+export async function setPayoutSource(
+  id: string,
+  source: "embedded" | "external",
+  externalAddress?: string
+): Promise<User | undefined> {
+  if (source === "embedded") {
+    return queryOne<User>(
+      `UPDATE users
+         SET wallet_address = embedded_wallet_address, wallet_source = 'embedded'
+       WHERE id = $1 AND embedded_wallet_address IS NOT NULL RETURNING *`,
+      [id]
+    );
+  }
+  if (!externalAddress) return undefined;
+  return queryOne<User>(
+    `UPDATE users SET wallet_address = $2, wallet_source = 'external' WHERE id = $1 RETURNING *`,
+    [id, externalAddress]
   );
 }
 
@@ -202,6 +299,51 @@ export async function listUsers(f: UserListFilters = {}): Promise<{ rows: UserLi
     params.slice(0, params.length - 2)
   );
   return { rows, total: Number(totalRow?.count ?? 0) };
+}
+
+export interface WalletListRow {
+  id: string;
+  email: string;
+  display_name: string | null;
+  handle: string | null;
+  role: UserRole;
+  embedded_wallet_address: string | null;
+  wallet_address: string | null;
+  wallet_source: string;
+  created_at: Date;
+}
+
+/**
+ * Users + their wallet addresses for the admin Wallets table. `sort` controls
+ * row order; on-chain USDC/gas balances are fetched in the route (not here).
+ * `balance_asc` is handled in the route after balances are read.
+ */
+export function listWalletUsers(opts: {
+  search?: string;
+  sort?: "newest" | "oldest" | "earned";
+  limit?: number;
+  offset?: number;
+} = {}): Promise<WalletListRow[]> {
+  const where: string[] = [];
+  const params: unknown[] = [];
+  if (opts.search) {
+    params.push(`%${opts.search.toLowerCase()}%`);
+    where.push(
+      `(LOWER(email) LIKE $${params.length} OR LOWER(handle) LIKE $${params.length} OR LOWER(display_name) LIKE $${params.length} OR LOWER(embedded_wallet_address) LIKE $${params.length} OR LOWER(wallet_address) LIKE $${params.length})`
+    );
+  }
+  const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
+  const order = opts.sort === "oldest" ? `created_at ASC` : `created_at DESC`;
+  params.push(Math.min(opts.limit ?? 200, 500), opts.offset ?? 0);
+  return query<WalletListRow>(
+    `SELECT id, email, display_name, handle, role,
+            embedded_wallet_address, wallet_address, wallet_source, created_at
+     FROM users
+     ${whereSql}
+     ORDER BY ${order}
+     LIMIT $${params.length - 1} OFFSET $${params.length}`,
+    params
+  );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -319,6 +461,8 @@ export function listContentByCreator(creatorId: string): Promise<Content[]> {
 
 export interface MarketplaceFilters {
   contentType?: ContentType;
+  /** Content types to exclude (e.g. exclude 'x-post' from the All feed). */
+  excludeTypes?: ContentType[];
   minPrice?: string;
   maxPrice?: string;
   sort?: "newest" | "popular";
@@ -332,6 +476,12 @@ export function listPublished(f: MarketplaceFilters = {}): Promise<ContentWithCr
   if (f.contentType) {
     params.push(f.contentType);
     where.push(`c.content_type = $${params.length}`);
+  } else if (f.excludeTypes && f.excludeTypes.length) {
+    const placeholders = f.excludeTypes.map((t) => {
+      params.push(t);
+      return `$${params.length}`;
+    });
+    where.push(`c.content_type NOT IN (${placeholders.join(",")})`);
   }
   if (f.minPrice) {
     params.push(f.minPrice);
@@ -558,6 +708,50 @@ export function failLedgerByToken(token: string): Promise<LedgerRow | undefined>
   return queryOne<LedgerRow>(
     `UPDATE payment_ledger SET status='failed' WHERE payment_token=$1 AND status='pending' RETURNING *`,
     [token]
+  );
+}
+
+/**
+ * Persist the Gateway attestation + burn signature the moment a live silent
+ * burn commits, so a stuck (pending) row can be retried (mint→split) later
+ * without re-burning. Idempotent; only touches still-pending rows.
+ */
+export function setLedgerAttestation(
+  token: string,
+  attestation: string,
+  burnSignature: string
+): Promise<LedgerRow | undefined> {
+  return queryOne<LedgerRow>(
+    `UPDATE payment_ledger
+       SET attestation = $2, burn_signature = $3
+     WHERE payment_token = $1 AND status = 'pending' RETURNING *`,
+    [token, attestation, burnSignature]
+  );
+}
+
+/** Record the mint tx hash (so a settle retry skips re-minting). */
+export function setLedgerMintTx(token: string, mintTx: string): Promise<LedgerRow | undefined> {
+  return queryOne<LedgerRow>(
+    `UPDATE payment_ledger SET mint_tx = $2 WHERE payment_token = $1 RETURNING *`,
+    [token, mintTx]
+  );
+}
+
+/** Pending ledger rows for admin reconciliation (oldest first). */
+export function listPendingLedger(limit = 100): Promise<LedgerRowEnriched[]> {
+  return query<LedgerRowEnriched>(
+    `SELECT l.*,
+            c.title AS content_title,
+            c.slug  AS content_slug,
+            u.display_name AS creator_name,
+            u.handle AS creator_handle
+     FROM payment_ledger l
+     LEFT JOIN content c ON c.id = l.content_id
+     LEFT JOIN users   u ON u.id = l.creator_id
+     WHERE l.status = 'pending'
+     ORDER BY l.created_at ASC
+     LIMIT $1`,
+    [Math.min(limit, 500)]
   );
 }
 

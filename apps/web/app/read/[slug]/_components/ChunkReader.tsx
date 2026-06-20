@@ -10,8 +10,11 @@ import type { Address } from "viem";
 import { useToast } from "@/components/Toaster";
 import { wagmiConfig } from "@/lib/wagmi";
 import { buildSessionPayment } from "@/lib/session-key-client";
+import { useEmbeddedWallet } from "@/lib/useEmbeddedWallet";
 import PaySetupModal, { type PaySessionInfo } from "@/components/PaySetupModal";
 import BalanceChip, { PAY_SESSION_EVENT } from "@/components/BalanceChip";
+import RichText from "@/components/RichText";
+import ShareButton from "@/components/ShareButton";
 
 const ARC_CHAIN_ID = Number(process.env.NEXT_PUBLIC_ARC_CHAIN_ID ?? "5042002");
 
@@ -80,11 +83,28 @@ export default function ChunkReader(props: Props) {
   const [showSetup, setShowSetup] = useState(false);
   const [pendingBlock, setPendingBlock] = useState<number | null>(null);
 
-  const { address, isConnected } = useAccount();
+  const { address } = useAccount();
   const chainId = useChainId();
   const { signTypedDataAsync } = useSignTypedData();
   const { switchChainAsync } = useSwitchChain();
   const toast = useToast();
+
+  // Embedded (Circle) wallet — the default for signed-in users who didn't bring
+  // their own. The silent-pay path works the same with either wallet; only the
+  // external-only wallet fallback (doWalletPay) needs a wagmi signer.
+  const embedded = useEmbeddedWallet();
+  const embeddedAddr = embedded.status?.hasWallet ? (embedded.status.address as Address | null) : null;
+  const effectiveWallet = (address ?? embeddedAddr ?? undefined) as Address | undefined;
+  const walletKind: "external" | "embedded" | null = address ? "external" : embeddedAddr ? "embedded" : null;
+  const hasWallet = !!effectiveWallet;
+  // Embedded status loads async (null until the GET resolves). Until then we
+  // don't know if the user has an embedded wallet — showing the external-only
+  // Connect button in that window would wrongly prompt an embedded user to
+  // connect MetaMask. Treat "unknown" as loading. An external (wagmi) address
+  // is known synchronously, so a connected user is never blocked on this.
+  const walletLoading = !address && embedded.status === null;
+  // Admins always use an external wallet (no embedded provisioning offered).
+  const canCreateEmbedded = embedded.status?.enabled === true && embedded.status?.isAdmin === false;
 
   // Hydrate unlocked chunks from localStorage so refresh keeps progress.
   useEffect(() => {
@@ -145,10 +165,10 @@ export default function ChunkReader(props: Props) {
   /** Silent path: sign a burn intent with the local session key (no popup). */
   const doSilentPay = useCallback(
     async (blockIndex: number, quote: { requirements: { amount: string }; sessionRecipient: Address }) => {
-      if (!address) return false;
+      if (!effectiveWallet) return false;
       const value = BigInt(quote.requirements.amount);
       const sessionPayment = await buildSessionPayment({
-        mainWallet: address,
+        mainWallet: effectiveWallet,
         recipient: quote.sessionRecipient,
         value,
       });
@@ -171,7 +191,7 @@ export default function ChunkReader(props: Props) {
       }
       throw new Error(d.friendly ?? d.error ?? "Silent payment failed.");
     },
-    [address, slug, unlocked, toast]
+    [effectiveWallet, slug, unlocked, toast]
   );
 
   /** Wallet path (one popup): Gateway-balance sign, else a direct USDC transfer. */
@@ -256,10 +276,12 @@ export default function ChunkReader(props: Props) {
   }
 
   async function unlock(blockIndex: number, opts?: { forceWallet?: boolean }) {
-    if (!isConnected || !address) {
-      toast("warning", "Connect your wallet to unlock this block.");
+    if (!hasWallet) {
+      toast("warning", "Connect a wallet (or create your free one) to unlock this block.");
       return;
     }
+    // The wallet fallback (pay just this block) requires an external wagmi wallet.
+    const forceWallet = opts?.forceWallet && walletKind === "external";
     setPaying(blockIndex);
     setError(null);
     try {
@@ -271,7 +293,7 @@ export default function ChunkReader(props: Props) {
       if (!quote.needsPayment) throw new Error(quote.friendly ?? quote.error ?? "Could not price this block.");
 
       // Preferred: silent session payment (no popup) when a session is active.
-      if (sessionActive && !opts?.forceWallet) {
+      if (sessionActive && !forceWallet) {
         const ok = await doSilentPay(blockIndex, quote);
         if (ok) return;
         // session unusable → offer setup again.
@@ -281,7 +303,7 @@ export default function ChunkReader(props: Props) {
       }
 
       // No session yet → invite the one-time setup (unless paying by wallet).
-      if (!opts?.forceWallet) {
+      if (!forceWallet) {
         setPendingBlock(blockIndex);
         setShowSetup(true);
         return;
@@ -310,13 +332,32 @@ export default function ChunkReader(props: Props) {
     if (blk != null) void unlock(blk); // now silent
   }
 
+  /** Create the free embedded wallet, then continue to unlock the pending block. */
+  async function createWalletThenUnlock(blockIndex: number) {
+    setPaying(blockIndex);
+    try {
+      await embedded.provision();
+      toast("success", "Wallet created — you can pay per block now.");
+      // status refresh is async; the user can tap Unlock once it lands.
+    } catch (e) {
+      const msg = String((e as { message?: string })?.message ?? e);
+      if (/rejected|denied|cancell?ed/i.test(msg)) toast("info", "Wallet setup cancelled.");
+      else toast("error", msg, "Couldn't create wallet");
+    } finally {
+      setPaying(null);
+    }
+  }
+
   return (
     <div className="mx-auto max-w-3xl px-margin-mobile py-stack-lg md:px-margin-desktop">
       <div className="mb-6 flex items-center justify-between gap-3">
         <Link href="/for-you" className="inline-flex items-center gap-1 font-label-caps text-label-caps text-outline hover:text-primary">
           ← For You
         </Link>
-        {isConnected && <BalanceChip pricePerBlock={pricePerBlock} onTopUp={() => setShowSetup(true)} />}
+        <div className="flex items-center gap-3">
+          <ShareButton slug={slug} title={title} />
+          {hasWallet && <BalanceChip pricePerBlock={pricePerBlock} onTopUp={() => setShowSetup(true)} />}
+        </div>
       </div>
 
       <div className="mb-1 flex items-center gap-2">
@@ -354,8 +395,8 @@ export default function ChunkReader(props: Props) {
           const isUnlocked = text !== undefined && text !== null;
           if (isUnlocked) {
             return (
-              <article key={c.id} className="whitespace-pre-wrap font-body-lg text-body-lg leading-relaxed text-on-surface">
-                {text}
+              <article key={c.id}>
+                <RichText source={text} />
               </article>
             );
           }
@@ -368,18 +409,39 @@ export default function ChunkReader(props: Props) {
               {isNext && (
                 <div className="mt-4 flex flex-col items-center gap-3 text-center">
                   <span className="flex items-center gap-1.5 font-label-caps text-label-caps text-outline"><span className="material-symbols-outlined text-[16px]">lock</span>Block {c.blockIndex} locked</span>
-                  {!isConnected ? (
-                    <ConnectButton />
+                  {walletLoading ? (
+                    <span className="flex items-center gap-2 font-body-sm text-[13px] text-on-surface-variant">
+                      <span className="material-symbols-outlined animate-spin text-[16px]">progress_activity</span>
+                      Checking your wallet…
+                    </span>
+                  ) : !hasWallet ? (
+                    <div className="flex flex-col items-center gap-2">
+                      {canCreateEmbedded && (
+                        <button
+                          onClick={() => createWalletThenUnlock(c.blockIndex)}
+                          disabled={paying !== null || embedded.busy}
+                          className="btn-primary px-8 py-3"
+                        >
+                          {paying === c.blockIndex || embedded.busy ? "Creating wallet…" : "Create your free wallet"}
+                        </button>
+                      )}
+                      <ConnectButton />
+                      {canCreateEmbedded && (
+                        <span className="font-body-sm text-[11px] text-outline">
+                          Free wallet (no app), or connect your own.
+                        </span>
+                      )}
+                    </div>
                   ) : (
                     <>
                       <button onClick={() => unlock(c.blockIndex)} disabled={paying !== null} className="btn-primary px-8 py-3">
                         {paying === c.blockIndex
-                          ? sessionActive ? "Unlocking…" : "Confirm in wallet…"
+                          ? sessionActive ? "Unlocking…" : walletKind === "embedded" ? "Setting up…" : "Confirm in wallet…"
                           : sessionActive
                             ? `Unlock · ${pricePerBlock} USDC`
                             : `Read on — ${pricePerBlock} USDC/block`}
                       </button>
-                      {!sessionActive && (
+                      {!sessionActive && walletKind === "external" && (
                         <button
                           onClick={() => unlock(c.blockIndex, { forceWallet: true })}
                           disabled={paying !== null}
@@ -406,9 +468,10 @@ export default function ChunkReader(props: Props) {
         </div>
       )}
 
-      {showSetup && address && (
+      {showSetup && effectiveWallet && walletKind && (
         <PaySetupModal
-          mainWallet={address}
+          mainWallet={effectiveWallet}
+          kind={walletKind}
           suggestedCap={Math.max(Number(pricePerBlock) * payable.length, Number(pricePerBlock) * 5)}
           onReady={onSessionReady}
           onClose={() => {

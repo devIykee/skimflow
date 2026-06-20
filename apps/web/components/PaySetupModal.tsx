@@ -8,6 +8,7 @@ import type { Address } from "viem";
 import { useToast } from "@/components/Toaster";
 import { wagmiConfig } from "@/lib/wagmi";
 import { getOrCreateSessionAccount } from "@/lib/session-key-client";
+import { executeChallenge } from "@/lib/useEmbeddedWallet";
 import { paySessionAuthMessage, GATEWAY_WALLET_ADDRESS, ARC_USDC_ADDRESS } from "@/lib/burn-intent";
 
 const ARC_CHAIN_ID = Number(process.env.NEXT_PUBLIC_ARC_CHAIN_ID ?? "5042002");
@@ -48,6 +49,8 @@ export interface PaySessionInfo {
 
 interface Props {
   mainWallet: Address;
+  /** "external" = wagmi wallet signs; "embedded" = Circle PIN challenges. */
+  kind?: "external" | "embedded";
   /** Suggested cap (e.g. enough for the whole article). */
   suggestedCap?: number;
   onReady: (session: PaySessionInfo) => void;
@@ -55,23 +58,21 @@ interface Props {
 }
 
 /**
- * One-time setup for silent payments. The user signs ONCE to authorize a local
- * session key with a spend cap; afterwards chunks unlock with no wallet popup.
- *
- * In simulate mode that's the only step. In live mode (NEXT_PUBLIC_PAYMENTS_MODE
- * =live) we also do the real Circle Gateway on-chain setup — approve + deposit
- * USDC into the Gateway Wallet, then addDelegate the session key — so the silent
- * burn intents actually settle. These are the ONLY wallet popups; every block
- * after setup is silent.
+ * One-time setup for silent payments. The user chooses how much USDC to deposit
+ * (the spend cap) and authorizes a local session key; afterwards chunks unlock
+ * with no popup. External wallets do the Gateway approve/deposit/addDelegate via
+ * wagmi; embedded (Circle) wallets do the same steps via PIN-approved challenges.
  */
-export default function PaySetupModal({ mainWallet, suggestedCap = 5, onReady, onClose }: Props) {
+export default function PaySetupModal({ mainWallet, kind = "external", suggestedCap = 5, onReady, onClose }: Props) {
   const [cap, setCap] = useState(String(suggestedCap));
   const [busy, setBusy] = useState(false);
   const [step, setStep] = useState<string | null>(null);
   const { signMessageAsync } = useSignMessage();
   const toast = useToast();
+  const embedded = kind === "embedded";
 
-  async function runLiveSetup(sessionAddress: Address, capWei: bigint) {
+  /** External wallet (wagmi) Gateway setup: approve → deposit → addDelegate. */
+  async function runExternalSetup(sessionAddress: Address, capWei: bigint) {
     setStep("Switching to Arc Testnet…");
     try {
       await switchChain(wagmiConfig, { chainId: ARC_CHAIN_ID });
@@ -119,10 +120,37 @@ export default function PaySetupModal({ mainWallet, suggestedCap = 5, onReady, o
     await waitForTransactionReceipt(wagmiConfig, { hash: delegateHash });
   }
 
+  /** Embedded (Circle) setup: each step is a backend challenge executed via PIN. */
+  async function runEmbeddedChallenge(
+    step: "approve" | "deposit" | "addDelegate",
+    sessionAddress: Address
+  ) {
+    const res = await fetch("/api/wallet/embedded/setup", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ step, cap, sessionAddress }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message ?? data.error ?? "Setup step failed.");
+    await executeChallenge(data.challengeId, {
+      userToken: data.userToken,
+      encryptionKey: data.encryptionKey,
+    });
+  }
+
+  async function runEmbeddedSetup(sessionAddress: Address) {
+    setStep("Approve USDC for the Gateway (enter your PIN)…");
+    await runEmbeddedChallenge("approve", sessionAddress);
+    setStep("Depositing USDC into your Gateway balance…");
+    await runEmbeddedChallenge("deposit", sessionAddress);
+    setStep("Authorizing this device (addDelegate)…");
+    await runEmbeddedChallenge("addDelegate", sessionAddress);
+  }
+
   async function authorize() {
     const capNum = Number(cap);
     if (!Number.isFinite(capNum) || capNum <= 0) {
-      toast("warning", "Enter a spend cap greater than 0.");
+      toast("warning", "Enter a deposit amount greater than 0.");
       return;
     }
     setBusy(true);
@@ -130,19 +158,29 @@ export default function PaySetupModal({ mainWallet, suggestedCap = 5, onReady, o
       const account = getOrCreateSessionAccount(mainWallet);
 
       if (LIVE) {
-        toast("info", "One-time on-chain setup — approve each step in your wallet.");
-        await runLiveSetup(account.address, parseUnits(cap, 6));
+        toast("info", embedded ? "One-time setup — approve each step with your PIN." : "One-time on-chain setup — approve each step in your wallet.");
+        if (embedded) await runEmbeddedSetup(account.address);
+        else await runExternalSetup(account.address, parseUnits(cap, 6));
       }
 
       setStep("Confirm authorization…");
-      const message = paySessionAuthMessage({ mainWallet, sessionAddress: account.address, cap });
-      toast("info", LIVE ? "Final step: sign to link this device." : "Sign once to authorize silent payments — no funds move.");
-      const signature = await signMessageAsync({ message });
+      let signature: string | undefined;
+      if (!embedded) {
+        const message = paySessionAuthMessage({ mainWallet, sessionAddress: account.address, cap });
+        toast("info", LIVE ? "Final step: sign to link this device." : "Sign once to authorize silent payments — no funds move.");
+        signature = await signMessageAsync({ message });
+      }
 
       const res = await fetch("/api/pay-session/init", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ mainWallet, sessionAddress: account.address, cap, signature }),
+        body: JSON.stringify({
+          mainWallet,
+          sessionAddress: account.address,
+          cap,
+          signature,
+          source: embedded ? "embedded" : "external",
+        }),
       });
       const data = await res.json();
       if (!res.ok || !data.ok) throw new Error(data.friendly ?? data.error ?? "Setup failed.");
@@ -171,13 +209,15 @@ export default function PaySetupModal({ mainWallet, suggestedCap = 5, onReady, o
         </div>
         <p className="mb-5 font-body-sm text-on-surface-variant">
           {LIVE
-            ? "A quick one-time setup deposits USDC into your Circle Gateway balance and authorizes this device. After that, each block unlocks instantly — no wallet popup per block."
+            ? embedded
+              ? "A quick one-time setup deposits the amount you choose into your Circle Gateway balance and authorizes this device with your PIN. After that, each block unlocks instantly — no PIN per block."
+              : "A quick one-time setup deposits the amount you choose into your Circle Gateway balance and authorizes this device. After that, each block unlocks instantly — no wallet popup per block."
             : "Sign once to authorize this device. After that, each block unlocks instantly — no wallet popup per block."}{" "}
           You stay in control: payments stop at your cap, and you can revoke anytime.
         </p>
 
         <label className="mb-1 block font-label-caps text-label-caps text-outline">
-          {LIVE ? "Deposit / spend cap (USDC)" : "Spend cap (USDC)"}
+          {LIVE ? "Amount to deposit / spend cap (USDC)" : "Spend cap (USDC)"}
         </label>
         <input
           type="number"
@@ -186,8 +226,11 @@ export default function PaySetupModal({ mainWallet, suggestedCap = 5, onReady, o
           value={cap}
           onChange={(e) => setCap(e.target.value)}
           disabled={busy}
-          className="mb-5 w-full rounded-lg border border-outline-variant bg-surface-container-low px-3 py-2 font-data-mono text-on-surface focus:border-primary focus:outline-none"
+          className="mb-1 w-full rounded-lg border border-outline-variant bg-surface-container-low px-3 py-2 font-data-mono text-on-surface focus:border-primary focus:outline-none"
         />
+        <p className="mb-5 font-body-sm text-[11px] text-on-surface-variant">
+          Type the exact amount you want available for this reading session.
+        </p>
 
         {busy && step && (
           <p className="mb-4 flex items-center gap-2 font-body-sm text-[13px] text-primary">

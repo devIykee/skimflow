@@ -114,10 +114,49 @@ export interface VerifyInput {
   verifyCode: string;
 }
 
+/**
+ * Master switch for ownership verification. Defaults ON. Set
+ * OWNERSHIP_VERIFICATION_ENABLED=0 to disable everywhere (non-blocking).
+ */
+function verificationEnabled(): boolean {
+  return process.env.OWNERSHIP_VERIFICATION_ENABLED !== "0";
+}
+
+/**
+ * X (Twitter) bio-code verification is currently non-functional: the public
+ * profile page is a JS-only SPA with no server-rendered bio text, so the code
+ * can never be found server-side. Until we move to the X API, X verification is
+ * gated off and treated as "unavailable" (non-blocking) rather than failing.
+ */
+function xVerificationEnabled(): boolean {
+  return process.env.X_VERIFICATION_ENABLED === "1";
+}
+
 /** Verify that the creator owns the imported source. */
 export async function verifyOwnership(input: VerifyInput): Promise<VerifyResult> {
   const info = detectPlatform(input.url);
   const base = { platform: info.platform, authorHandle: info.authorHandle, profileUrl: info.profileUrl };
+
+  // Global kill-switch — never block publishing on verification when off.
+  if (!verificationEnabled()) {
+    return {
+      ...base,
+      verified: false,
+      via: null,
+      reason: "Ownership verification is temporarily disabled — you can still publish.",
+    };
+  }
+
+  // X bio-code check can't work against the SPA; gate it off (non-blocking).
+  if (info.platform === "x" && !xVerificationEnabled()) {
+    return {
+      ...base,
+      verified: false,
+      via: null,
+      reason:
+        "X ownership verification is temporarily unavailable. You can still import and publish the post.",
+    };
+  }
 
   if (info.platform === "github") {
     if (!input.githubUsername) {

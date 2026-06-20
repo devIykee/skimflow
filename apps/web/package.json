@@ -11,6 +11,8 @@
     "db:seed": "tsx scripts/seed.ts"
   },
   "dependencies": {
+    "@circle-fin/user-controlled-wallets": "^10.6.0",
+    "@circle-fin/w3s-pw-web-sdk": "^1.1.11",
     "@linepay/agent": "*",
     "@linepay/sdk": "*",
     "@mozilla/readability": "^0.5.0",
@@ -26,7 +28,9 @@
     "pg": "^8.13.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "react-markdown": "^10.1.0",
     "recharts": "^2.13.0",
+    "remark-gfm": "^4.0.1",
     "turndown": "^7.2.0",
     "viem": "^2.21.0",
     "wagmi": "^2.13.0"

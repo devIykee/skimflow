@@ -2,6 +2,7 @@ import NextAuth from "next-auth";
 import { NextResponse } from "next/server";
 import { authConfig } from "./auth.config.js";
 import { applyCors, corsPolicyFor } from "./lib/cors.js";
+import { persistReferral } from "./lib/referral.js";
 
 /**
  * Edge middleware. Uses the DB-free authConfig (so `pg` never enters the edge
@@ -37,6 +38,9 @@ export default auth((req) => {
 
   const res = NextResponse.next();
   if (policy) applyCors(res.headers, policy, origin);
+  // Capture ?ref=<creatorId> from any shared link into the referral cookie so
+  // later purchases on this device credit the referrer. No-op when ?ref= absent.
+  persistReferral(req, res);
   return res;
 });
 

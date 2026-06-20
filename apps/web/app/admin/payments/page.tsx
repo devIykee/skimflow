@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import PendingSettlement from "../_components/PendingSettlement";
 
 interface Row {
   id: string;
@@ -83,6 +84,8 @@ export default function PaymentsPage() {
   }
 
   return (
+    <div className="flex flex-col gap-4">
+    <PendingSettlement />
     <div className="card">
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search tx / address / title / creator…" className="flex-grow rounded-lg border border-outline px-3 py-2 text-body-sm" />
@@ -154,6 +157,7 @@ export default function PaymentsPage() {
           )}
         </table>
       </div>
+    </div>
     </div>
   );
 }

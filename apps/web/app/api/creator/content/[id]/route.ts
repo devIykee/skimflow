@@ -31,6 +31,22 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
       status?: ContentStatus;
     };
 
+    // Wallet gate (same as create): can't move a draft to published without a
+    // payout wallet. Block here too so the table's Publish toggle can't bypass it.
+    if (body.status === "published") {
+      const hasWallet = !!actor.user.wallet_address || !!actor.user.embedded_wallet_address;
+      if (!hasWallet) {
+        return Response.json(
+          {
+            error: "wallet_required",
+            walletRequired: true,
+            message: "Create a payout wallet before publishing — your draft is safe.",
+          },
+          { status: 422 }
+        );
+      }
+    }
+
     let rechunk;
     if (body.body?.trim()) {
       const contentType = content.content_type as ContentType;
