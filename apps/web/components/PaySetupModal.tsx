@@ -35,6 +35,16 @@ const GATEWAY_WALLET_ABI = [
     ],
     outputs: [],
   },
+  {
+    type: "function",
+    name: "availableBalance",
+    stateMutability: "view",
+    inputs: [
+      { name: "token", type: "address" },
+      { name: "depositor", type: "address" },
+    ],
+    outputs: [{ name: "", type: "uint256" }],
+  },
 ] as const;
 
 export interface PaySessionInfo {
@@ -71,6 +81,24 @@ export default function PaySetupModal({ mainWallet, kind = "external", suggested
   const toast = useToast();
   const embedded = kind === "embedded";
 
+  /**
+   * Current spendable balance already in the user's Gateway account. When this
+   * covers the cap we can skip the approve + deposit steps entirely and go
+   * straight to addDelegate — one signature/PIN instead of three.
+   */
+  async function gatewayAvailable(): Promise<bigint> {
+    try {
+      return (await readContract(wagmiConfig, {
+        address: GATEWAY_WALLET_ADDRESS,
+        abi: GATEWAY_WALLET_ABI,
+        functionName: "availableBalance",
+        args: [ARC_USDC_ADDRESS, mainWallet],
+      })) as bigint;
+    } catch {
+      return 0n; // on any read error, fall back to the full deposit flow
+    }
+  }
+
   /** External wallet (wagmi) Gateway setup: approve → deposit → addDelegate. */
   async function runExternalSetup(sessionAddress: Address, capWei: bigint) {
     setStep("Switching to Arc Testnet…");
@@ -83,32 +111,37 @@ export default function PaySetupModal({ mainWallet, kind = "external", suggested
     const usdc = ARC_USDC_ADDRESS;
     const gateway = GATEWAY_WALLET_ADDRESS;
 
-    const allowance = (await readContract(wagmiConfig, {
-      address: usdc,
-      abi: erc20Abi,
-      functionName: "allowance",
-      args: [mainWallet, gateway],
-    })) as bigint;
+    // If funds are already deposited in the Gateway, skip approve + deposit.
+    const alreadyFunded = (await gatewayAvailable()) >= capWei;
 
-    if (allowance < capWei) {
-      setStep("Approve USDC for the Gateway…");
-      const hash = await writeContract(wagmiConfig, {
+    if (!alreadyFunded) {
+      const allowance = (await readContract(wagmiConfig, {
         address: usdc,
         abi: erc20Abi,
-        functionName: "approve",
-        args: [gateway, capWei],
-      });
-      await waitForTransactionReceipt(wagmiConfig, { hash });
-    }
+        functionName: "allowance",
+        args: [mainWallet, gateway],
+      })) as bigint;
 
-    setStep("Depositing USDC into your Gateway balance…");
-    const depositHash = await writeContract(wagmiConfig, {
-      address: gateway,
-      abi: GATEWAY_WALLET_ABI,
-      functionName: "deposit",
-      args: [usdc, capWei],
-    });
-    await waitForTransactionReceipt(wagmiConfig, { hash: depositHash });
+      if (allowance < capWei) {
+        setStep("Approve USDC for the Gateway…");
+        const hash = await writeContract(wagmiConfig, {
+          address: usdc,
+          abi: erc20Abi,
+          functionName: "approve",
+          args: [gateway, capWei],
+        });
+        await waitForTransactionReceipt(wagmiConfig, { hash });
+      }
+
+      setStep("Depositing USDC into your Gateway balance…");
+      const depositHash = await writeContract(wagmiConfig, {
+        address: gateway,
+        abi: GATEWAY_WALLET_ABI,
+        functionName: "deposit",
+        args: [usdc, capWei],
+      });
+      await waitForTransactionReceipt(wagmiConfig, { hash: depositHash });
+    }
 
     setStep("Authorizing the session key (addDelegate)…");
     const delegateHash = await writeContract(wagmiConfig, {
@@ -138,11 +171,16 @@ export default function PaySetupModal({ mainWallet, kind = "external", suggested
     });
   }
 
-  async function runEmbeddedSetup(sessionAddress: Address) {
-    setStep("Approve USDC for the Gateway (enter your PIN)…");
-    await runEmbeddedChallenge("approve", sessionAddress);
-    setStep("Depositing USDC into your Gateway balance…");
-    await runEmbeddedChallenge("deposit", sessionAddress);
+  async function runEmbeddedSetup(sessionAddress: Address, capWei: bigint) {
+    // If the embedded wallet already has enough deposited in the Gateway, skip
+    // straight to addDelegate — a single PIN entry instead of three.
+    const alreadyFunded = (await gatewayAvailable()) >= capWei;
+    if (!alreadyFunded) {
+      setStep("Approve USDC for the Gateway (enter your PIN)…");
+      await runEmbeddedChallenge("approve", sessionAddress);
+      setStep("Depositing USDC into your Gateway balance…");
+      await runEmbeddedChallenge("deposit", sessionAddress);
+    }
     setStep("Authorizing this device (addDelegate)…");
     await runEmbeddedChallenge("addDelegate", sessionAddress);
   }
@@ -159,7 +197,7 @@ export default function PaySetupModal({ mainWallet, kind = "external", suggested
 
       if (LIVE) {
         toast("info", embedded ? "One-time setup — approve each step with your PIN." : "One-time on-chain setup — approve each step in your wallet.");
-        if (embedded) await runEmbeddedSetup(account.address);
+        if (embedded) await runEmbeddedSetup(account.address, parseUnits(cap, 6));
         else await runExternalSetup(account.address, parseUnits(cap, 6));
       }
 

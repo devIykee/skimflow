@@ -275,13 +275,17 @@ export default function ChunkReader(props: Props) {
     }
   }
 
-  async function unlock(blockIndex: number, opts?: { forceWallet?: boolean }) {
+  async function unlock(blockIndex: number, opts?: { forceWallet?: boolean; sessionReady?: boolean }) {
     if (!hasWallet) {
       toast("warning", "Connect a wallet (or create your free one) to unlock this block.");
       return;
     }
     // The wallet fallback (pay just this block) requires an external wagmi wallet.
     const forceWallet = opts?.forceWallet && walletKind === "external";
+    // `sessionReady` lets the just-completed setup signal an active session
+    // without waiting for the async `sessionActive` state to flush — otherwise
+    // this call reads the stale `false` and re-opens the setup modal.
+    const hasSession = sessionActive || !!opts?.sessionReady;
     setPaying(blockIndex);
     setError(null);
     try {
@@ -293,7 +297,7 @@ export default function ChunkReader(props: Props) {
       if (!quote.needsPayment) throw new Error(quote.friendly ?? quote.error ?? "Could not price this block.");
 
       // Preferred: silent session payment (no popup) when a session is active.
-      if (sessionActive && !forceWallet) {
+      if (hasSession && !forceWallet) {
         const ok = await doSilentPay(blockIndex, quote);
         if (ok) return;
         // session unusable → offer setup again.
@@ -325,11 +329,13 @@ export default function ChunkReader(props: Props) {
 
   function onSessionReady(_session: PaySessionInfo) {
     setSessionActive(true);
-    setShowSetup(false);
+    setShowSetup(false); // close the setup box immediately — payment is set up
     window.dispatchEvent(new Event(PAY_SESSION_EVENT));
     const blk = pendingBlock;
     setPendingBlock(null);
-    if (blk != null) void unlock(blk); // now silent
+    // Pass sessionReady so this unlock takes the silent path now, instead of
+    // reading the not-yet-flushed `sessionActive` and re-opening the modal.
+    if (blk != null) void unlock(blk, { sessionReady: true });
   }
 
   /** Create the free embedded wallet, then continue to unlock the pending block. */
