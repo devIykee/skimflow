@@ -2,16 +2,20 @@
  * Chunk validation for article-type content (the pay-per-block reading type).
  *
  * Rules (confirmed defaults):
- *  - Minimum 6 "lines" per chunk. A "line" = a text line that is non-empty after
- *    trimming AND longer than a single character, so one-char-per-line padding
- *    can't inflate the count. The LAST chunk of a piece is exempt (final-chunk
- *    exception) — this also covers single-chunk short posts.
+ *  - Minimum 6 "lines" per chunk, counted as WRAPPED lines (~80 chars each), not
+ *    raw newlines — imported prose (Medium/Turndown) puts a whole paragraph on
+ *    one soft-wrapped line, so counting raw newlines would conflict with the word
+ *    ceiling. A line that is whitespace or a single character contributes 0, so
+ *    one-char-per-line padding still can't inflate the count. The LAST chunk is
+ *    exempt (final-chunk exception) — this also covers single-chunk short posts.
  *  - Maximum 400 words per chunk. Exception: a chunk that is a single sentence
  *    longer than the ceiling can't be split without breaking the no-mid-sentence
  *    rule, so it's a warning (allowed), not a blocking error.
- *  - Every chunk boundary must fall on a sentence ending (`.`, `!`, `?`, or a
- *    closing quote/paren immediately following one). The final chunk's end is the
- *    end of the document, not a split point, so it's exempt from this check.
+ *  - Every chunk boundary must fall on a sentence ending (`.`, `!`, `?`, optional
+ *    trailing quotes/parens/emphasis markers) OR on a structural markdown line
+ *    (heading, list item, blockquote, table, image, link, code fence, rule),
+ *    which are complete units rather than mid-sentence breaks. The final chunk's
+ *    end is the document end, not a split point, so it's exempt from this check.
  *
  * These rules apply only to the 'article' content type. 'agent-skills' is not
  * paginated paid-reading content and is never chunk-validated; 'picture'
@@ -20,13 +24,37 @@
 
 export const MIN_LINES = 6;
 export const MAX_WORDS = 400;
+const CHARS_PER_LINE = 80;
 
-/** Count lines that meaningfully contribute: non-empty after trim and >1 char. */
+/**
+ * Count wrapped lines. Each non-empty hard line longer than one character counts
+ * as ceil(length / 80) lines, so a substantial paragraph (one soft-wrapped line
+ * in imported markdown) registers as several lines. Whitespace and single-char
+ * lines contribute 0 — the one-char-per-line abuse guard.
+ */
 export function countLines(text: string): number {
-  return text
-    .split(/\r?\n/)
-    .map((l) => l.trim())
-    .filter((l) => l.length > 1).length;
+  return text.split(/\r?\n/).reduce((n, raw) => {
+    const t = raw.trim();
+    if (t.length <= 1) return n;
+    return n + Math.max(1, Math.ceil(t.length / CHARS_PER_LINE));
+  }, 0);
+}
+
+/** Structural markdown lines are complete units, not mid-sentence prose breaks. */
+function isStructuralLine(line: string): boolean {
+  const l = line.trim();
+  if (!l) return false;
+  return (
+    /^#{1,6}\s/.test(l) ||                 // heading
+    /^([-*+]|\d+[.)])\s/.test(l) ||        // list item
+    /^>/.test(l) ||                         // blockquote
+    /^\|/.test(l) ||                        // table row
+    /^```/.test(l) ||                       // code fence
+    /^(-{3,}|\*{3,}|_{3,})$/.test(l) ||     // horizontal rule
+    /^!\[.*\]\(.*\)$/.test(l) ||            // standalone image
+    /\]\([^)]*\)$/.test(l) ||               // ends on a markdown link/image
+    l === "[" || /^\]\(/.test(l)            // stray link-bracket lines (Medium)
+  );
 }
 
 export function countWords(text: string): number {
@@ -44,9 +72,18 @@ export function countSentences(text: string): number {
   return m ? m.length : 0;
 }
 
-/** Does the text end on a sentence terminator (allowing trailing quotes/parens)? */
+/**
+ * Does the chunk end at a legitimate boundary? True when the last non-empty line
+ * is a structural markdown element, or ends on a sentence terminator allowing
+ * trailing quotes/parens/brackets and markdown emphasis markers (* _ `) — so a
+ * paragraph ending in **bold.** or a heading isn't flagged as mid-sentence.
+ */
 export function endsOnSentenceBoundary(text: string): boolean {
-  return /[.!?]["'”’)\]]*\s*$/.test(text.trimEnd());
+  const lines = text.trimEnd().split(/\r?\n/);
+  const last = (lines[lines.length - 1] ?? "").trim();
+  if (!last) return false;
+  if (isStructuralLine(last)) return true;
+  return /[.!?]["'”’)\]*_`]*$/.test(last);
 }
 
 export interface ChunkValidation {

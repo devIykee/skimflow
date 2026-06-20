@@ -9,6 +9,8 @@
  * block) is generated separately at publish time — this utility only splits the
  * creator's own body.
  */
+import { countLines as lineCount, countWords as wordCount, MIN_LINES, MAX_WORDS } from "./chunk-validate.js";
+
 export type ChunkFormat = "article" | "markdown";
 
 export interface Chunk {
@@ -66,28 +68,16 @@ export function chunkContent({ content, format }: ChunkInput): Chunk[] {
 
 // ── Auto-chunk ────────────────────────────────────────────────────────────────
 // Greedily group consecutive paragraphs into chunks that satisfy the minimum
-// line count without exceeding the word ceiling, then rewrite the body so each
-// chunk is one blank-line-delimited block (paragraphs within a chunk are joined
-// by single newlines, so each counts as a line for the minimum). Chunk
-// boundaries always land on paragraph breaks (which are sentence-final in real
-// content). A single paragraph that alone exceeds the ceiling becomes its own
-// oversized chunk rather than being split mid-sentence.
+// (wrapped) line count without exceeding the word ceiling, then rewrite the body
+// so each chunk is one blank-line-delimited block (paragraphs within a chunk are
+// joined by single newlines). Lines are counted the same wrapped way as
+// chunk-validate.ts, so the two never disagree. A new chunk is preferentially
+// started at a heading (once the minimum is met) so headings lead their section
+// instead of being stranded at the end of the previous chunk. A single paragraph
+// that alone exceeds the ceiling becomes its own oversized chunk rather than
+// being split mid-sentence.
 
-const AUTO_MIN_LINES = 6;
-const AUTO_MAX_WORDS = 400;
-
-/** Non-empty, >1-char lines — mirrors countLines() in chunk-validate.ts. */
-function lineCount(text: string): number {
-  return text
-    .split(/\r?\n/)
-    .map((l) => l.trim())
-    .filter((l) => l.length > 1).length;
-}
-
-function wordCount(text: string): number {
-  const m = text.trim().match(/\S+/g);
-  return m ? m.length : 0;
-}
+const isHeading = (p: string): boolean => /^#{1,6}\s/.test(p.trim());
 
 /**
  * Rewrite an article body so blank-line-delimited blocks are sensible chunks.
@@ -113,13 +103,17 @@ export function autoChunkArticle(content: string): string {
 
   for (const p of paragraphs) {
     const w = wordCount(p);
+    // Start a fresh chunk at a heading once the current one already qualifies,
+    // so a heading begins its section rather than ending the previous chunk.
+    if (cur.length > 0 && isHeading(p) && lineCount(cur.join("\n")) >= MIN_LINES) flush();
     // Adding this paragraph would blow the ceiling — close the current chunk
     // first (unless it's empty, i.e. this single paragraph is itself oversized).
-    if (cur.length > 0 && curWords + w > AUTO_MAX_WORDS) flush();
+    if (cur.length > 0 && curWords + w > MAX_WORDS) flush();
     cur.push(p);
     curWords += w;
-    // Once we've met the minimum line count, close on this paragraph boundary.
-    if (lineCount(cur.join("\n")) >= AUTO_MIN_LINES) flush();
+    // Once we've met the minimum line count, close on this paragraph boundary —
+    // but not if the chunk would end on a heading (let its body join it).
+    if (lineCount(cur.join("\n")) >= MIN_LINES && !isHeading(p)) flush();
   }
   flush();
 
