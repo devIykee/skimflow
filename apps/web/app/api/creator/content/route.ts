@@ -7,14 +7,13 @@ import {
 import {
   createContent,
   creatorPublishedCount,
-  getOrCreateVerifyCode,
   listContentByCreator,
   recordAdminEvent,
 } from "@/lib/store";
 import { chunkContent } from "@/lib/chunk-content";
 import { normalizeUsdc } from "@/lib/money";
 import { notifyFirstPublish } from "@/lib/email";
-import { detectPlatform, verifyOwnership } from "@/lib/ownership";
+import { detectPlatform } from "@/lib/ownership";
 import type { ContentType } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -98,23 +97,16 @@ export async function POST(req: NextRequest) {
 
     const isFirstPublish = status === "published" && (await creatorPublishedCount(user.id)) === 0;
 
-    // Ownership verification: if this piece was imported, RE-VERIFY server-side
-    // (never trust a client flag) and record the verdict on the content.
+    // Import provenance only. Ownership verification was removed to keep
+    // publishing seamless — we still record the source URL + platform for
+    // attribution, but never block or gate on a verification step.
     let sourceUrl: string | null = null;
     let sourcePlatform: string | null = null;
-    let ownershipVerified = false;
-    let verifiedVia: string | null = null;
+    const ownershipVerified = false;
+    const verifiedVia: string | null = null;
     if (body.sourceUrl && typeof body.sourceUrl === "string") {
       sourceUrl = body.sourceUrl;
       sourcePlatform = detectPlatform(sourceUrl).platform;
-      try {
-        const verifyCode = await getOrCreateVerifyCode(user.id);
-        const v = await verifyOwnership({ url: sourceUrl, githubUsername: user.github_username, verifyCode });
-        ownershipVerified = v.verified;
-        verifiedVia = v.via;
-      } catch {
-        /* verification best-effort — publish proceeds unverified */
-      }
     }
 
     const content = await createContent({

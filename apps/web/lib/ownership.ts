@@ -66,7 +66,7 @@ export function detectPlatform(rawUrl: string): PlatformInfo {
 export function newVerifyCode(seed: string): string {
   // No Math.random (sandbox-safe): derive from a high-res-ish seed.
   const h = Buffer.from(`${seed}|${process.hrtime.bigint().toString(36)}`).toString("base64url").replace(/[^a-z0-9]/gi, "").slice(0, 10).toLowerCase();
-  return `linepay-verify-${h}`;
+  return `skimflow-verify-${h}`;
 }
 
 const FETCH_TIMEOUT_MS = 10_000;
@@ -80,7 +80,7 @@ async function fetchProfileText(url: string): Promise<string | null> {
     const res = await fetch(url, {
       signal: controller.signal,
       redirect: "follow",
-      headers: { "User-Agent": "LinePayCite-Verifier/1.0 (+https://linepay.cite)" },
+      headers: { "User-Agent": "SkimflowCite-Verifier/1.0 (+https://skimflow.cite)" },
     });
     if (!res.ok) return null;
     const buf = await res.arrayBuffer();

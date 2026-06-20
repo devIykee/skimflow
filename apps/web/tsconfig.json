@@ -16,8 +16,8 @@
     "plugins": [{ "name": "next" }],
     "paths": {
       "@/*": ["./*"],
-      "@linepay/sdk": ["../../packages/sdk/src/index.ts"],
-      "@linepay/agent": ["../agent/src/index.ts"]
+      "@skimflow/sdk": ["../../packages/sdk/src/index.ts"],
+      "@skimflow/agent": ["../agent/src/index.ts"]
     }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],

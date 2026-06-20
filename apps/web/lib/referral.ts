@@ -5,7 +5,7 @@
  */
 import type { NextRequest } from "next/server";
 
-export const REFERRAL_COOKIE = "linepay_ref";
+export const REFERRAL_COOKIE = "skimflow_ref";
 const MAX_AGE = 60 * 60 * 24 * 30; // 30 days
 
 /** Resolve the active referrer id from query (?ref=) then cookie. */

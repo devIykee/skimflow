@@ -5,7 +5,7 @@ import {
   verifiedBonus,
   type GuardianPolicy,
   type PaymentRequirement,
-} from "@linepay/sdk";
+} from "@skimflow/sdk";
 import { X402Client } from "./x402-client.js";
 
 // ── Catalog item shape (from /api/catalog) ───────────────────────────────────

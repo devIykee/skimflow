@@ -44,17 +44,9 @@ export default function ContentManager({ impersonating }: { impersonating: boole
   const [busy, setBusy] = useState(false);
   const [published, setPublished] = useState<{ readerUrl: string; agentUrl?: string } | null>(null);
 
-  // Import provenance + ownership verification (Phase 5).
+  // Import provenance (recorded for attribution; no ownership-verification gate).
   const [sourceUrl, setSourceUrl] = useState<string | null>(null);
   const [sourcePlatform, setSourcePlatform] = useState<string | null>(null);
-  const [verify, setVerify] = useState<{
-    verified: boolean;
-    via: string | null;
-    reason: string;
-    code?: string;
-    instructions?: string;
-  } | null>(null);
-  const [verifying, setVerifying] = useState(false);
 
   const loadList = useCallback(() => {
     fetch("/api/creator/content", { credentials: "include" })
@@ -106,35 +98,12 @@ export default function ContentManager({ impersonating }: { impersonating: boole
         setContentType(d.contentType ?? (d.format === "markdown" ? "agent-skills" : "article"));
         setSourceUrl(d.sourceUrl ?? importUrl);
         setSourcePlatform(d.sourcePlatform ?? null);
-        setVerify(null);
-        toast("success", "Imported — verify ownership, then publish when ready.");
+        toast("success", "Imported — review and publish when ready.");
       } else {
         toast("error", d.message ?? d.error ?? "Import failed");
       }
     } finally {
       setBusy(false);
-    }
-  }
-
-  async function doVerify() {
-    if (!sourceUrl) return;
-    setVerifying(true);
-    try {
-      const r = await fetch("/api/creator/verify-ownership", {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: sourceUrl }),
-      });
-      const d = await r.json();
-      if (r.ok) {
-        setVerify(d);
-        toast(d.verified ? "success" : "info", d.reason ?? (d.verified ? "Ownership verified." : "Not verified yet."));
-      } else {
-        toast("error", d.error ?? "Verification failed");
-      }
-    } finally {
-      setVerifying(false);
     }
   }
 
@@ -154,13 +123,13 @@ export default function ContentManager({ impersonating }: { impersonating: boole
         // Keep the editor cleared (the draft is saved) and prompt wallet setup.
         setWalletGatedDraft(d.contentId ?? null);
         setTitle(""); setBody(""); setSummary(""); setTags(""); setPreview(null);
-        setSourceUrl(null); setSourcePlatform(null); setVerify(null);
+        setSourceUrl(null); setSourcePlatform(null);
         loadList();
         toast("info", d.message ?? "Saved to drafts — create a wallet to publish.");
       } else if (r.ok) {
         if (status === "published") setPublished({ readerUrl: d.readerUrl, agentUrl: d.agentUrl });
         setTitle(""); setBody(""); setSummary(""); setTags(""); setPreview(null);
-        setSourceUrl(null); setSourcePlatform(null); setVerify(null);
+        setSourceUrl(null); setSourcePlatform(null);
         loadList();
         toast(
           "success",
@@ -233,37 +202,13 @@ export default function ContentManager({ impersonating }: { impersonating: boole
           <button onClick={doImport} disabled={busy || disabled} className="btn-primary px-5 py-2">Import &amp; Monetize</button>
         </div>
 
-        {/* Ownership verification (Phase 5) */}
+        {/* Import provenance (informational — publishing is never gated). */}
         {sourceUrl && (
-          <div className="mt-4 rounded-lg border border-outline-variant bg-surface-container-low p-4">
-            <div className="mb-2 flex items-center justify-between gap-2">
-              <span className="font-label-caps text-label-caps text-on-surface-variant">
-                Source ownership{sourcePlatform ? ` · ${sourcePlatform}` : ""}
-              </span>
-              {verify?.verified ? (
-                <span className="flex items-center gap-1 font-label-caps text-label-caps text-secondary">
-                  <span className="material-symbols-outlined text-[16px]">verified</span>Verified
-                </span>
-              ) : (
-                <button onClick={doVerify} disabled={verifying} className="btn-outline px-4 py-1.5 text-body-sm">
-                  {verifying ? "Checking…" : "Verify ownership"}
-                </button>
-              )}
-            </div>
-            <p className="font-body-sm text-body-sm text-on-surface-variant">
-              {verify
-                ? verify.reason
-                : "Prove you own this source to earn a “Verified ✓” badge. GitHub verifies instantly from your login; X / Substack / Medium use a one-time code in your bio."}
-            </p>
-            {verify && !verify.verified && verify.code && (
-              <div className="mt-3 rounded-md bg-surface-container p-3">
-                <div className="mb-1 font-label-caps text-label-caps text-outline">Add this to your bio, then re-check</div>
-                <code className="select-all font-data-mono text-[13px] text-primary">{verify.code}</code>
-                {verify.instructions && (
-                  <p className="mt-1 font-body-sm text-[12px] text-on-surface-variant">{verify.instructions}</p>
-                )}
-              </div>
-            )}
+          <div className="mt-4 rounded-lg bg-surface-container-low/60 p-3">
+            <span className="font-label-caps text-label-caps text-on-surface-variant">
+              Imported source{sourcePlatform ? ` · ${sourcePlatform}` : ""}
+            </span>
+            <p className="mt-1 truncate font-body-sm text-[12px] text-outline">{sourceUrl}</p>
           </div>
         )}
       </div>

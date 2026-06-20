@@ -2,27 +2,132 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ── Design tokens as CSS variables (RGB triples for Tailwind <alpha-value>) ──
+ * :root is the light "paper & ink" palette; .dark is a low-fatigue zinc/slate
+ * palette (no pure blacks/whites). Every color token class adapts. */
 :root {
   color-scheme: light;
+  --error-container: 255 218 214;
+  --on-primary-container: 255 251 255;
+  --on-tertiary: 255 255 255;
+  --secondary-fixed-dim: 138 213 190;
+  --on-secondary: 255 255 255;
+  --on-primary-fixed-variant: 125 45 10;
+  --surface-bright: 251 249 243;
+  --surface-dim: 220 218 212;
+  --secondary: 24 106 87;
+  --on-secondary-fixed: 0 32 25;
+  --tertiary-container: 116 116 121;
+  --error: 186 26 26;
+  --on-surface-variant: 86 66 60;
+  --surface-container-lowest: 255 255 255;
+  --surface-tint: 156 68 32;
+  --secondary-fixed: 165 242 217;
+  --inverse-surface: 48 49 45;
+  --surface: 251 249 243;
+  --tertiary-fixed-dim: 199 198 203;
+  --secondary-container: 165 242 217;
+  --on-error-container: 147 0 10;
+  --on-primary: 255 255 255;
+  --primary-fixed: 255 219 207;
+  --on-primary-fixed: 56 13 0;
+  --tertiary-fixed: 227 226 232;
+  --surface-container-low: 245 243 237;
+  --surface-container-highest: 228 226 221;
+  --on-tertiary-container: 254 252 255;
+  --primary-container: 184 89 51;
+  --surface-container: 240 238 232;
+  --tertiary: 91 91 97;
+  --on-secondary-container: 33 112 93;
+  --primary: 153 65 30;
+  --outline: 137 114 106;
+  --on-error: 255 255 255;
+  --on-background: 27 28 24;
+  --background: 251 249 243;
+  --primary-fixed-dim: 255 181 155;
+  --inverse-on-surface: 243 241 235;
+  --on-surface: 27 28 24;
+  --surface-container-high: 234 232 226;
+  --surface-variant: 228 226 221;
+  --inverse-primary: 255 181 155;
+  --on-secondary-fixed-variant: 0 81 65;
+  --outline-variant: 220 193 184;
+  --on-tertiary-fixed: 26 27 32;
+  --on-tertiary-fixed-variant: 70 70 75;
+}
+
+.dark {
+  color-scheme: dark;
+  --background: 9 9 11;
+  --surface: 9 9 11;
+  --surface-bright: 24 24 27;
+  --surface-dim: 10 10 12;
+  --surface-container-lowest: 16 16 18;
+  --surface-container-low: 24 24 27;
+  --surface-container: 31 31 35;
+  --surface-container-high: 39 39 42;
+  --surface-container-highest: 46 46 51;
+  --surface-variant: 39 39 42;
+  --on-surface: 228 228 231;
+  --on-background: 228 228 231;
+  --on-surface-variant: 180 168 162;
+  --outline: 168 155 148;
+  --outline-variant: 77 69 64;
+  --primary: 255 155 115;
+  --on-primary: 58 20 0;
+  --primary-container: 184 89 51;
+  --on-primary-container: 255 219 207;
+  --primary-fixed: 255 219 207;
+  --on-primary-fixed: 56 13 0;
+  --on-primary-fixed-variant: 255 181 155;
+  --primary-fixed-dim: 255 155 115;
+  --surface-tint: 255 155 115;
+  --inverse-primary: 153 65 30;
+  --secondary: 138 213 190;
+  --on-secondary: 0 56 43;
+  --secondary-container: 0 81 65;
+  --on-secondary-container: 165 242 217;
+  --secondary-fixed: 165 242 217;
+  --on-secondary-fixed: 0 32 25;
+  --secondary-fixed-dim: 138 213 190;
+  --on-secondary-fixed-variant: 0 81 65;
+  --tertiary: 199 198 203;
+  --on-tertiary: 45 45 49;
+  --tertiary-container: 70 70 75;
+  --on-tertiary-container: 227 226 232;
+  --tertiary-fixed: 227 226 232;
+  --on-tertiary-fixed: 26 27 32;
+  --tertiary-fixed-dim: 199 198 203;
+  --on-tertiary-fixed-variant: 199 198 203;
+  --error: 255 180 171;
+  --on-error: 105 0 5;
+  --error-container: 147 0 10;
+  --on-error-container: 255 218 214;
+  --inverse-surface: 228 226 221;
+  --inverse-on-surface: 27 28 24;
 }
 
 body {
-  background-color: #fbf9f3;
-  color: #1b1c18;
+  background-color: rgb(var(--background));
+  color: rgb(var(--on-background));
   -webkit-font-smoothing: antialiased;
+  transition: background-color 0.2s ease, color 0.2s ease;
 }
 
 /* Editorial "paper and ink" tactility from DESIGN.md. */
 .paper-texture {
-  background-color: #fbf9f3;
+  background-color: rgb(var(--surface));
   background-image: url("https://www.transparenttextures.com/patterns/felt.png");
   background-repeat: repeat;
 }
 .editorial-shadow {
   box-shadow: 0px 4px 20px rgba(11, 12, 16, 0.04);
 }
+.dark .editorial-shadow {
+  box-shadow: 0px 4px 20px rgba(0, 0, 0, 0.35);
+}
 .paper-border {
-  border: 1px solid rgba(11, 12, 16, 0.1);
+  border: 1px solid rgb(var(--outline-variant));
 }
 .editorial-container {
   max-width: 1200px;
@@ -40,7 +145,7 @@ body {
 /* Underlined "editorial" inputs — subtle bottom border, terracotta on focus. */
 .input-editorial {
   border: 0;
-  border-bottom: 1px solid #dcc1b8;
+  border-bottom: 1px solid rgb(var(--outline-variant));
   background: transparent;
   padding: 8px 0;
   width: 100%;
@@ -48,17 +153,17 @@ body {
   outline: none;
 }
 .input-editorial:focus {
-  border-bottom: 2px solid #99411e;
+  border-bottom: 2px solid rgb(var(--primary));
 }
 textarea.input-editorial,
 select.input-editorial {
-  border: 1px solid #dcc1b8;
+  border: 1px solid rgb(var(--outline-variant));
   border-radius: 0.5rem;
   padding: 12px;
 }
 select.input-editorial:focus,
 textarea.input-editorial:focus {
-  border: 1px solid #99411e;
+  border: 1px solid rgb(var(--primary));
 }
 
 @layer components {

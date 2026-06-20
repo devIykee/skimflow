@@ -78,8 +78,8 @@ or token>\`. The block is served optimistically and reconciled by webhook.
 $ curl -i "${url}?block=1"
 HTTP/1.1 402 Payment Required
 {
-  "x402Version": 1,
-  "error": "payment_required",
+  "x402Version": 2,
+  "error": "X-Payment header is required",
   "accepts": [{
     "scheme": "exact",
     "network": "eip155:5042002",

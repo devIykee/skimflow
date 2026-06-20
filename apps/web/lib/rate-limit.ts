@@ -44,7 +44,7 @@ function upstashLimiter(limit: number, windowSec: number): Ratelimit {
     rl = new Ratelimit({
       redis: redis!,
       limiter: Ratelimit.slidingWindow(limit, `${windowSec} s`),
-      prefix: "linepay:rl",
+      prefix: "skimflow:rl",
       analytics: false,
     });
     limiters.set(key, rl);

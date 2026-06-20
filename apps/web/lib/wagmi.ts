@@ -47,10 +47,10 @@ export const arcTestnet = defineChain({
  * the wallet state hydrates correctly.
  */
 // Shown in the wallet app during a WalletConnect (mobile QR / deep-link) connect.
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "https://linepay-ten.vercel.app";
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "https://skimflow-ten.vercel.app";
 
 export const wagmiConfig = getDefaultConfig({
-  appName: "LinePay Cite",
+  appName: "Skimflow",
   appDescription: "Pay-per-block content for humans and agents, settled in USDC on Arc.",
   appUrl: APP_URL,
   appIcon: `${APP_URL.replace(/\/$/, "")}/favicon.ico`,

@@ -105,7 +105,7 @@ export default async function Home() {
         <div className="mx-auto max-w-2xl space-y-stack-md">
           <h2 className="font-headline-md text-headline-md">Make the smallest unit sellable.</h2>
           <p className="mb-stack-lg font-body-md text-body-md text-on-surface-variant">
-            Put a line behind LinePay and every reader — human or agent — pays you for it.
+            Put a line behind Skimflow and every reader — human or agent — pays you for it.
           </p>
           <div className="flex justify-center gap-gutter pt-stack-md">
             <Link href="/dashboard" className="btn-primary px-12 py-4 !text-body-lg editorial-shadow">Start Writing</Link>

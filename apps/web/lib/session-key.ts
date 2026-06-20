@@ -8,7 +8,7 @@
  */
 import { SignJWT, jwtVerify } from "jose";
 
-export const PAY_SESSION_COOKIE = "linepay_pay_session";
+export const PAY_SESSION_COOKIE = "skimflow_pay_session";
 
 /** Default lifetime of a pay session if the caller doesn't specify one. */
 export const PAY_SESSION_TTL = "30d";

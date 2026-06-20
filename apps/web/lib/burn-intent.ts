@@ -154,7 +154,7 @@ export function paySessionAuthMessage(args: {
   cap: string;
 }): string {
   return [
-    "LinePay Cite — authorize silent payments",
+    "Skimflow — authorize silent payments",
     "",
     `Wallet: ${getAddress(args.mainWallet)}`,
     `Session key: ${getAddress(args.sessionAddress)}`,

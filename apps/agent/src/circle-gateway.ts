@@ -16,7 +16,7 @@
  * Dynamic import keeps the package optional — the simulate-mode demo runs
  * without it, and this throws a clear message if used live without it.
  */
-import type { Hex } from "@linepay/sdk";
+import type { Hex } from "@skimflow/sdk";
 
 export interface CircleBuyer {
   pay(url: string): Promise<{ data: unknown; status: number }>;

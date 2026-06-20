@@ -1,4 +1,4 @@
-# LinePay Cite — Deployment Guide
+# Skimflow Cite — Deployment Guide
 
 Dual-sided nanopayment platform: humans pay per chunk (wallet), agents pay per
 block (HTTP 402 + `X-Payment-Token` + Circle Gateway), on Arc testnet. Stack:

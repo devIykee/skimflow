@@ -1,58 +1,31 @@
 /** @type {import('tailwindcss').Config} */
 // Tokens mirror the Stitch "Editorial Minimalism" design system (DESIGN.md).
+// Colors are CSS variables (RGB triples) defined in globals.css for :root (light)
+// and .dark, so every `bg-*`/`text-*` token adapts to the active theme.
+const tokenColor = (name) => `rgb(var(--${name}) / <alpha-value>)`;
+
+const COLOR_TOKENS = [
+  "error-container", "on-primary-container", "on-tertiary", "secondary-fixed-dim",
+  "on-secondary", "on-primary-fixed-variant", "surface-bright", "surface-dim",
+  "secondary", "on-secondary-fixed", "tertiary-container", "error",
+  "on-surface-variant", "surface-container-lowest", "surface-tint", "secondary-fixed",
+  "inverse-surface", "surface", "tertiary-fixed-dim", "secondary-container",
+  "on-error-container", "on-primary", "primary-fixed", "on-primary-fixed",
+  "tertiary-fixed", "surface-container-low", "surface-container-highest",
+  "on-tertiary-container", "primary-container", "surface-container", "tertiary",
+  "on-secondary-container", "primary", "outline", "on-error", "on-background",
+  "background", "primary-fixed-dim", "inverse-on-surface", "on-surface",
+  "surface-container-high", "surface-variant", "inverse-primary",
+  "on-secondary-fixed-variant", "outline-variant", "on-tertiary-fixed",
+  "on-tertiary-fixed-variant",
+];
+
 export default {
+  darkMode: "class",
   content: ["./app/**/*.{ts,tsx}", "./components/**/*.{ts,tsx}"],
   theme: {
     extend: {
-      colors: {
-        "error-container": "#ffdad6",
-        "on-primary-container": "#fffbff",
-        "on-tertiary": "#ffffff",
-        "secondary-fixed-dim": "#8ad5be",
-        "on-secondary": "#ffffff",
-        "on-primary-fixed-variant": "#7d2d0a",
-        "surface-bright": "#fbf9f3",
-        "surface-dim": "#dcdad4",
-        secondary: "#186a57",
-        "on-secondary-fixed": "#002019",
-        "tertiary-container": "#747479",
-        error: "#ba1a1a",
-        "on-surface-variant": "#56423c",
-        "surface-container-lowest": "#ffffff",
-        "surface-tint": "#9c4420",
-        "secondary-fixed": "#a5f2d9",
-        "inverse-surface": "#30312d",
-        surface: "#fbf9f3",
-        "tertiary-fixed-dim": "#c7c6cb",
-        "secondary-container": "#a5f2d9",
-        "on-error-container": "#93000a",
-        "on-primary": "#ffffff",
-        "primary-fixed": "#ffdbcf",
-        "on-primary-fixed": "#380d00",
-        "tertiary-fixed": "#e3e2e8",
-        "surface-container-low": "#f5f3ed",
-        "surface-container-highest": "#e4e2dd",
-        "on-tertiary-container": "#fefcff",
-        "primary-container": "#b85933",
-        "surface-container": "#f0eee8",
-        tertiary: "#5b5b61",
-        "on-secondary-container": "#21705d",
-        primary: "#99411e",
-        outline: "#89726a",
-        "on-error": "#ffffff",
-        "on-background": "#1b1c18",
-        background: "#fbf9f3",
-        "primary-fixed-dim": "#ffb59b",
-        "inverse-on-surface": "#f3f1eb",
-        "on-surface": "#1b1c18",
-        "surface-container-high": "#eae8e2",
-        "surface-variant": "#e4e2dd",
-        "inverse-primary": "#ffb59b",
-        "on-secondary-fixed-variant": "#005141",
-        "outline-variant": "#dcc1b8",
-        "on-tertiary-fixed": "#1a1b20",
-        "on-tertiary-fixed-variant": "#46464b",
-      },
+      colors: Object.fromEntries(COLOR_TOKENS.map((t) => [t, tokenColor(t)])),
       borderRadius: {
         DEFAULT: "0.25rem",
         lg: "0.5rem",
@@ -82,6 +55,8 @@ export default {
         "body-md": ["Hanken Grotesk", "system-ui", "sans-serif"],
         "headline-sm": ["Playfair Display", "Georgia", "serif"],
         "display-lg-mobile": ["Playfair Display", "Georgia", "serif"],
+        // Reading serif for long-form article bodies (premium publishing feel).
+        "reading": ["Source Serif 4", "Georgia", "Cambria", "serif"],
       },
       fontSize: {
         "body-lg": ["18px", { lineHeight: "1.6", fontWeight: "400" }],
@@ -93,6 +68,8 @@ export default {
         "body-md": ["16px", { lineHeight: "1.5", fontWeight: "400" }],
         "headline-sm": ["24px", { lineHeight: "1.3", fontWeight: "600" }],
         "display-lg-mobile": ["32px", { lineHeight: "1.2", fontWeight: "700" }],
+        // Comfortable long-form reading size.
+        "reading": ["19px", { lineHeight: "1.8", fontWeight: "400" }],
       },
     },
   },

@@ -13,7 +13,7 @@ interface BalanceState {
 }
 
 /** Fired by the reader after each silent payment so the chip updates at once. */
-export const PAY_SESSION_EVENT = "linepay:paysession";
+export const PAY_SESSION_EVENT = "skimflow:paysession";
 
 interface Props {
   /** Per-block price — used to warn when fewer than ~2 blocks remain. */

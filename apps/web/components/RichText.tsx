@@ -14,7 +14,7 @@ import remarkGfm from "remark-gfm";
  */
 export default function RichText({ source }: { source: string }) {
   return (
-    <div className="rich-text font-body-lg text-body-lg leading-relaxed text-on-surface">
+    <div className="rich-text font-reading text-reading leading-relaxed text-on-surface">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
@@ -41,7 +41,7 @@ export default function RichText({ source }: { source: string }) {
           h1: ({ children }) => <h1 className="mb-3 mt-5 font-headline-sm text-headline-sm">{children}</h1>,
           h2: ({ children }) => <h2 className="mb-2 mt-5 font-headline-sm text-headline-sm">{children}</h2>,
           h3: ({ children }) => <h3 className="mb-2 mt-4 font-label-lg text-label-lg">{children}</h3>,
-          p: ({ children }) => <p className="mb-4">{children}</p>,
+          p: ({ children }) => <p className="mb-6">{children}</p>,
           ul: ({ children }) => <ul className="mb-4 list-disc pl-6">{children}</ul>,
           ol: ({ children }) => <ol className="mb-4 list-decimal pl-6">{children}</ol>,
           li: ({ children }) => <li className="mb-1">{children}</li>,

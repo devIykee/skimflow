@@ -58,7 +58,7 @@ export class GatewayClient {
     }
 
     return {
-      x402Version: 1,
+      x402Version: 2,
       scheme: "gateway-exact",
       network: "arc-testnet",
       payload: { ...base, signature },

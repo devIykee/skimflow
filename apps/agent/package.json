@@ -1,5 +1,5 @@
 {
-  "name": "@linepay/agent",
+  "name": "@skimflow/agent",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -9,13 +9,14 @@
   "scripts": {
     "agent": "tsx src/cli.ts",
     "circle": "tsx src/circle-pay.ts",
+    "test:x402": "tsx src/test-x402.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@langchain/anthropic": "^0.3.0",
     "@langchain/core": "^0.3.0",
     "@langchain/groq": "^0.2.0",
-    "@linepay/sdk": "*",
+    "@skimflow/sdk": "*",
     "viem": "^2.21.0"
   },
   "optionalDependencies": {

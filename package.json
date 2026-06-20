@@ -1,8 +1,8 @@
 {
-  "name": "lepton-linepay-cite",
+  "name": "lepton-skimflow-cite",
   "version": "0.1.0",
   "private": true,
-  "description": "LinePay Cite — per-line nanopayments for writers, with an autonomous reading agent. Built on x402 + Circle Gateway + Arc.",
+  "description": "Skimflow Cite — per-line nanopayments for writers, with an autonomous reading agent. Built on x402 + Circle Gateway + Arc.",
   "workspaces": [
     "packages/*",
     "apps/*",
@@ -17,6 +17,7 @@
     "seed": "npm run db:migrate --workspace apps/web && npm run db:seed --workspace apps/web",
     "demo:traffic": "node scripts/demo-traffic.mjs",
     "agent": "npm run agent --workspace apps/agent",
+    "test:x402": "npm run test:x402 --workspace apps/agent --",
     "circle": "npm run circle --workspace apps/agent --",
     "circle:setup": "bash scripts/circle-setup.sh",
     "setup": "bash scripts/setup.sh",

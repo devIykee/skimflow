@@ -79,7 +79,7 @@ export function decodeXPayment(header: string | null): DecodedPayment | null {
   };
 }
 
-/** Build the x402 402 response body (standard `accepts[]` + human-friendly fields). */
+/** Build the x402 v2 402 response body (`accepts[]` + ResourceInfo + mirror). */
 export function paymentRequiredBody(args: {
   blockIndex?: number;
   amount: string; // base units
@@ -88,14 +88,22 @@ export function paymentRequiredBody(args: {
   description?: string;
 }) {
   const requirements = batchingRequirements(args.amount, args.payTo);
+  const description = args.description ?? "Unlock this content block with USDC on Arc.";
   return {
-    x402Version: 1,
-    error: "payment_required",
+    x402Version: 2,
+    error: "X-Payment header is required to access this resource.",
+    // v2 ResourceInfo — describes what is being paid for, separate from the
+    // payment requirements themselves.
+    resource: {
+      url: args.resource,
+      description,
+      mimeType: "text/markdown",
+    },
     accepts: [
       {
         ...requirements,
         resource: args.resource,
-        description: args.description ?? "Unlock this content block with USDC on Arc.",
+        description,
       },
     ],
     // Legacy/human-readable mirror (kept so older agents keep working).
@@ -105,7 +113,7 @@ export function paymentRequiredBody(args: {
     cost_per_block: toDecimal(args.amount),
     currency: "USDC",
     instructions:
-      "Sign an EIP-3009 USDC authorization for `pay_to` and retry with header `X-Payment: <base64 payload>` (x402). Legacy: pay then retry with `X-Payment-Token: <token>`.",
+      "Sign an EIP-3009 USDC authorization for `pay_to` and retry with header `X-Payment: <base64 payload>` (x402 v2). Legacy: pay then retry with `X-Payment-Token: <token>`.",
   };
 }
 

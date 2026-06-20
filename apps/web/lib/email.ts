@@ -91,7 +91,7 @@ function layout(title: string, bodyHtml: string): string {
     <h2 style="margin:0 0 12px">${title}</h2>
     ${bodyHtml}
     <hr style="border:none;border-top:1px solid #eee;margin:24px 0"/>
-    <p style="color:#888;font-size:12px">LinePay Cite — nanopayments for creators on Arc.</p>
+    <p style="color:#888;font-size:12px">Skimflow — nanopayments for creators on Arc.</p>
   </div>`;
 }
 
@@ -230,7 +230,7 @@ export function notifyFirstPublish(args: {
     to: args.to,
     subject: `🎉 Your first piece is live: ${args.title}`,
     html: layout(
-      `Welcome to LinePay Cite${args.name ? `, ${args.name}` : ""}!`,
+      `Welcome to Skimflow${args.name ? `, ${args.name}` : ""}!`,
       `<p>Your content <strong>${args.title}</strong> is published.</p>
        <p>Share your reader link with humans:<br/><a href="${args.readerUrl}">${args.readerUrl}</a></p>
        ${agentLine}

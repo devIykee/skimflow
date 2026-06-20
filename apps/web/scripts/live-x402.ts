@@ -62,7 +62,7 @@ async function main() {
   const buyerGwBefore = await rel.gatewayBalance(buyer.address);
 
   const resource = {
-    url: "https://linepay.cite/read/demo-skill/agent-skills.md?block=1",
+    url: "https://skimflow.cite/read/demo-skill/agent-skills.md?block=1",
     description: "Unlock block 1",
     mimeType: "application/json",
   };

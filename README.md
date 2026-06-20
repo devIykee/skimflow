@@ -1,10 +1,10 @@
-# LinePay Cite 🪙📖
+# Skimflow Cite 🪙📖
 
 ### *Get paid every time someone reads a line of your story. Your readers pay per line — agents welcome.*
 
 **Lepton Agents Hackathon · Canteen × Circle × Arc** — built for **RFB 6 (Creator & Publisher Monetization)**, with an autonomous paying agent for **RFB 1**.
 
-LinePay Cite makes the smallest unit of writing — a single line — sellable. Creators put an **x402** paywall on articles and light-novel chapters; **both human readers and AI agents** pay **per line** (from $0.000001), settled gas-free as **USDC on Arc** through **Circle Gateway**, with an automatic **85/10/5** revenue split. The payment floor that forced everything into $10/month subscriptions is gone — so the lepton, the smallest coin, comes back as the nanopayment.
+Skimflow Cite makes the smallest unit of writing — a single line — sellable. Creators put an **x402** paywall on articles and light-novel chapters; **both human readers and AI agents** pay **per line** (from $0.000001), settled gas-free as **USDC on Arc** through **Circle Gateway**, with an automatic **85/10/5** revenue split. The payment floor that forced everything into $10/month subscriptions is gone — so the lepton, the smallest coin, comes back as the nanopayment.
 
 Runs **end-to-end out of the box in simulate mode** (no keys), and flips to **real Arc testnet USDC** with a few env vars.
 
@@ -17,7 +17,7 @@ Runs **end-to-end out of the box in simulate mode** (no keys), and flips to **re
 > Requires Node ≥ 20.6.
 
 ```bash
-cd lepton-linepay-cite
+cd lepton-skimflow-cite
 bash scripts/setup.sh
 ```
 

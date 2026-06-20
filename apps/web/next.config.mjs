@@ -1,7 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   // The SDK + agent ship as raw TypeScript in the monorepo; transpile them here.
-  transpilePackages: ["@linepay/sdk", "@linepay/agent"],
+  transpilePackages: ["@skimflow/sdk", "@skimflow/agent"],
   // Keep the Postgres driver out of the bundler (Node runtime resolves it).
   serverExternalPackages: ["pg"],
   experimental: {

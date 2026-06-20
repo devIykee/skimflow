@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Buyer-agent CLI — runs the full agent-skills 402 → pay → unlock flow against a
- * running LinePay Cite server and prints the reasoning/payment trace.
+ * running Skimflow server and prints the reasoning/payment trace.
  *
  *   npm run agent -- --url http://localhost:3000 --slug my-skill-abc12 --simulate
  *   npm run agent -- --slug my-skill-abc12            # live (needs BUYER_PRIVATE_KEY)
@@ -26,7 +26,7 @@ async function main() {
     process.exit(1);
   }
 
-  console.log(`\n🤖 LinePay Cite buyer agent (agent-skills flow)`);
+  console.log(`\n🤖 Skimflow buyer agent (agent-skills flow)`);
   console.log(`   server: ${baseUrl}`);
   console.log(`   slug:   ${slug}`);
   console.log(`   mode:   ${simulate ? "simulate" : "live"}\n`);

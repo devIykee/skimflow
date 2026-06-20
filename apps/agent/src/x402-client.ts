@@ -8,7 +8,7 @@ import {
   type SettlementReceipt,
   type Address,
   type Hex,
-} from "@linepay/sdk";
+} from "@skimflow/sdk";
 
 /**
  * Minimal x402 client for the buyer agent.

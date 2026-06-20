@@ -12,11 +12,15 @@ export function newNonce(): Hex {
   return ("0x" + randomBytes(32).toString("hex")) as Hex;
 }
 
-/** Build an x402 402-response body for a single requirement. */
+/** Build an x402 v2 402-response body for a single requirement. */
 export function buildPaymentRequired(
   req: PaymentRequirement
 ): PaymentRequiredBody {
-  return { x402Version: 1, error: "payment_required", accepts: [req] };
+  return {
+    x402Version: 2,
+    error: "X-Payment header is required to access this resource.",
+    accepts: [req],
+  };
 }
 
 /** Encode a payment payload for the `X-PAYMENT` request header. */

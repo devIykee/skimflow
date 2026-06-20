@@ -10,7 +10,7 @@ import path from "node:path";
  * All monetary columns are NUMERIC(18,6) USDC. `pg` returns NUMERIC as a
  * string by default, which we keep (lossless) — see lib/money.ts for math.
  *
- * Set DATABASE_URL (e.g. postgres://user:pass@host:5432/linepay). Locally a
+ * Set DATABASE_URL (e.g. postgres://user:pass@host:5432/skimflow). Locally a
  * docker Postgres works; in production use a managed instance.
  */
 let _pool: Pool | null = null;
@@ -22,7 +22,7 @@ let _pool: Pool | null = null;
  * connection-limited pooler (e.g. Supabase session mode caps at ~15 clients →
  * `EMAXCONNSESSION`, and every query then blocks waiting for a free slot).
  */
-const _g = globalThis as unknown as { __linepayPgPool?: Pool };
+const _g = globalThis as unknown as { __skimflowPgPool?: Pool };
 
 /**
  * Decide TLS for the connection. Managed Postgres (Supabase, Neon, RDS,
@@ -68,15 +68,15 @@ function stripSslMode(connectionString: string): string {
 
 export function pool(): Pool {
   if (_pool) return _pool;
-  if (_g.__linepayPgPool) {
-    _pool = _g.__linepayPgPool;
+  if (_g.__skimflowPgPool) {
+    _pool = _g.__skimflowPgPool;
     return _pool;
   }
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) {
     throw new Error(
       "DATABASE_URL is not set. Point it at a Postgres instance, e.g. " +
-        "postgres://postgres:postgres@localhost:5432/linepay"
+        "postgres://postgres:postgres@localhost:5432/skimflow"
     );
   }
   const ssl = resolveSsl(connectionString);
@@ -98,7 +98,7 @@ export function pool(): Pool {
   _pool.on("error", (err) => {
     console.error("[db] idle client error:", err.message);
   });
-  _g.__linepayPgPool = _pool;
+  _g.__skimflowPgPool = _pool;
   return _pool;
 }
 

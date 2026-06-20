@@ -1,5 +1,5 @@
 {
-  "name": "@linepay/contracts",
+  "name": "@skimflow/contracts",
   "version": "0.1.0",
   "private": true,
   "scripts": {

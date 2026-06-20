@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-export const metadata = { title: "Docs — LinePay Cite" };
+export const metadata = { title: "Docs — Skimflow" };
 
 function Code({ children, lang }: { children: string; lang?: string }) {
   return (
@@ -26,7 +26,7 @@ export default function DocsPage() {
         <span className="label-caps text-primary">DOCUMENTATION</span>
         <h1 className="mt-1 font-display-lg text-display-lg-mobile md:text-display-lg">Get paid for your writing, one block at a time</h1>
         <p className="mt-2 max-w-2xl font-body-lg text-body-lg text-on-surface-variant">
-          LinePay Cite lets you publish text — articles or AI&nbsp;agent skills — and charge a tiny
+          Skimflow lets you publish text — articles or AI&nbsp;agent skills — and charge a tiny
           amount to unlock it. Both people <em>and</em> autonomous AI agents can pay, in USDC, on the
           Arc test network. New here? This page walks you through the whole idea in a few minutes.
         </p>
@@ -171,7 +171,7 @@ const block = await res.text();   // the unlocked block — ready to use`}</Code
 
       <H2 id="live">Going live (real payments)</H2>
       <p className="font-body-md text-on-surface-variant">
-        Out of the box, LinePay Cite runs in <strong>simulate mode</strong> — everything works end to end, but no real
+        Out of the box, Skimflow runs in <strong>simulate mode</strong> — everything works end to end, but no real
         money moves, so it&apos;s perfect for trying things out. To settle real USDC on Arc testnet, set
         {" "}<span className="font-data-mono text-body-sm">PAYMENTS_MODE=live</span> plus your Circle credentials. The
         bundled Circle Gateway tooling (<span className="font-data-mono text-body-sm">npm run circle -- deposit / pay / balances</span>)

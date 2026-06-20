@@ -13,7 +13,7 @@
  * validate-and-records (no funds move). Legacy `X-Payment-Token` is used only if
  * a server doesn't advertise `accepts[]`.
  */
-import { loadArcConfig, type Address, type Hex } from "@linepay/sdk";
+import { loadArcConfig, type Address, type Hex } from "@skimflow/sdk";
 
 export interface AgentSkillsOptions {
   baseUrl: string;

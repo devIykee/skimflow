@@ -34,7 +34,7 @@ import {
   verifyBurnIntent,
 } from "@/lib/gateway-relayer";
 import type { WireBurnIntent } from "@/lib/burn-intent";
-import type { Address, Hex } from "@linepay/sdk";
+import type { Address, Hex } from "@skimflow/sdk";
 
 export const runtime = "nodejs";
 

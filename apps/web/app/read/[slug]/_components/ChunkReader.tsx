@@ -72,7 +72,7 @@ interface Props {
 
 export default function ChunkReader(props: Props) {
   const { slug, title, summary, creatorHandle, pricePerBlock, chunks, agentUrl } = props;
-  const storageKey = `linepay_reader_${slug}`;
+  const storageKey = `skimflow_reader_${slug}`;
 
   const [unlocked, setUnlocked] = useState<Record<number, string>>({});
   const [paying, setPaying] = useState<number | null>(null);
@@ -349,7 +349,7 @@ export default function ChunkReader(props: Props) {
   }
 
   return (
-    <div className="mx-auto max-w-3xl px-margin-mobile py-stack-lg md:px-margin-desktop">
+    <div className="mx-auto max-w-2xl px-margin-mobile py-stack-lg md:px-margin-desktop">
       <div className="mb-6 flex items-center justify-between gap-3">
         <Link href="/for-you" className="inline-flex items-center gap-1 font-label-caps text-label-caps text-outline hover:text-primary">
           ← For You
@@ -402,7 +402,7 @@ export default function ChunkReader(props: Props) {
           }
           const isNext = nextLocked?.id === c.id;
           return (
-            <div key={c.id} className="relative overflow-hidden rounded-xl border border-outline-variant bg-surface-container-low p-5">
+            <div key={c.id} className="relative overflow-hidden rounded-xl bg-surface-container-low/60 p-5">
               <div className="select-none blur-[5px]" aria-hidden>
                 {"████ ██████ ████████ ███ ██████ █████ ████████ ██████ ███ █████ ████ ██████ ███████."}
               </div>

@@ -1,5 +1,5 @@
 /**
- * Core domain + x402 protocol types for LinePay Cite.
+ * Core domain + x402 protocol types for Skimflow.
  *
  * All monetary amounts are denominated in **USDC base units** (6 decimals).
  * 1 USDC = 1_000_000 base units. A "nanopayment" here can be as small as a
@@ -48,10 +48,10 @@ export interface PaymentRequirement {
   };
 }
 
-/** The full HTTP 402 body. */
+/** The full HTTP 402 body (x402 v2). */
 export interface PaymentRequiredBody {
-  x402Version: 1;
-  error: "payment_required";
+  x402Version: 2;
+  error: string;
   accepts: PaymentRequirement[];
 }
 
@@ -61,7 +61,7 @@ export interface PaymentRequiredBody {
  * facilitator batches and settles on Arc.
  */
 export interface PaymentPayload {
-  x402Version: 1;
+  x402Version: 2;
   scheme: "gateway-exact";
   network: "arc-testnet";
   payload: {

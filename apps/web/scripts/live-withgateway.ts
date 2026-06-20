@@ -37,11 +37,11 @@ async function main() {
   });
   const xPayment = Buffer.from(JSON.stringify({ x402Version: 2, payload: { authorization, signature } })).toString("base64");
 
-  const req = new NextRequest("https://linepay.cite/read/demo/agent-skills.md?block=1", { headers: { "X-Payment": xPayment } });
+  const req = new NextRequest("https://skimflow.cite/read/demo/agent-skills.md?block=1", { headers: { "X-Payment": xPayment } });
   console.log("Calling withGateway() in LIVE mode (payTo fresh creator", creator + ")…");
   const res = await withGateway(
     req,
-    { price: "0.05", payTo: getAddress(creator), resource: "https://linepay.cite/read/demo/agent-skills.md?block=1", description: "Unlock block 1", blockIndex: 1 },
+    { price: "0.05", payTo: getAddress(creator), resource: "https://skimflow.cite/read/demo/agent-skills.md?block=1", description: "Unlock block 1", blockIndex: 1 },
     async (receipt) => new Response(`BLOCK CONTENT (paid by ${receipt.payer}, tx ${receipt.txHash}, sim=${receipt.simulated})`, { status: 200 })
   );
   console.log("HTTP status:", res.status);

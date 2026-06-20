@@ -7,7 +7,7 @@ export default function NotFound() {
       <p className="font-body-lg text-body-lg text-on-surface-variant">That line isn&apos;t for sale here.</p>
       <div className="flex justify-center pt-stack-md">
         <Link href="/" className="btn-primary px-10 py-4 !text-body-lg editorial-shadow">
-          Back to LinePay Cite
+          Back to Skimflow
         </Link>
       </div>
     </div>

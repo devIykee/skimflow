@@ -17,7 +17,7 @@ import {
   type WireBurnIntent,
 } from "./burn-intent.js";
 
-const keyStorageKey = (mainWallet: string) => `linepay_paykey_${mainWallet.toLowerCase()}`;
+const keyStorageKey = (mainWallet: string) => `skimflow_paykey_${mainWallet.toLowerCase()}`;
 
 /** Load the existing session account for a main wallet, or null if none. */
 export function loadSessionAccount(mainWallet: string): PrivateKeyAccount | null {

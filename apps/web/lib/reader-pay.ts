@@ -5,7 +5,7 @@
  * is price_per_block and payTo is the creator's validated wallet.
  */
 import { createPublicClient, getAddress, http, parseEventLogs, erc20Abi } from "viem";
-import { loadArcConfig, type Address } from "@linepay/sdk";
+import { loadArcConfig, type Address } from "@skimflow/sdk";
 
 export const arc = loadArcConfig();
 

@@ -13,7 +13,7 @@ import { updateExportJob } from "./store.js";
 export async function runExportJob(jobId: string): Promise<void> {
   try {
     await updateExportJob(jobId, { status: "processing" });
-    const file = path.join(os.tmpdir(), `linepay-export-${jobId}.csv`);
+    const file = path.join(os.tmpdir(), `skimflow-export-${jobId}.csv`);
     const ws = createWriteStream(file, { encoding: "utf8" });
     for await (const line of ledgerCsvRows(2000)) {
       if (!ws.write(line)) await new Promise<void>((r) => ws.once("drain", () => r()));

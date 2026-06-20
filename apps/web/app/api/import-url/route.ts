@@ -91,9 +91,14 @@ function titleFromMarkdown(md: string, fallback: string): string {
   return (m?.[1] ?? fallback).trim();
 }
 
-/** Extract a tweet/post id from an x.com / twitter.com status URL. */
+/**
+ * Extract a tweet/post id from an X / Twitter URL. Covers the status form
+ * (`/<handle>/status/123`), the intent form (`/i/web/status/123`), and X
+ * long-form "articles" (`/i/article/123` or `/<handle>/article/123`), plus any
+ * trailing segments (`/photo/1`, query, etc.).
+ */
 function tweetIdFromUrl(u: URL): string | null {
-  const m = u.pathname.match(/\/status(?:es)?\/(\d+)/);
+  const m = u.pathname.match(/\/(?:status(?:es)?|article)\/(\d+)/);
   return m?.[1] ?? null;
 }
 
@@ -101,6 +106,20 @@ function tweetIdFromUrl(u: URL): string | null {
 function syndicationToken(id: string): string {
   return ((Number(id) / 1e15) * Math.PI).toString(36).replace(/(0+|\.)/g, "");
 }
+
+/**
+ * The `features` flags react-tweet sends. Without them the syndication CDN may
+ * omit `note_tweet` (the full long-form body), returning only the truncated
+ * preview `text`. Including them maximizes the chance we get the real body.
+ */
+const SYNDICATION_FEATURES =
+  "tfw_timeline_list:;tfw_follower_count_sunset:true;tfw_tweet_edit_backend:on;" +
+  "tfw_refsrc_session:on;tfw_fosnr_soft_interventions_enabled:on;" +
+  "tfw_show_birdwatch_pivots_enabled:on;tfw_show_business_verified_badge:on;" +
+  "tfw_duplicate_scribes_to_settings:on;tfw_use_profile_image_shape_enabled:on;" +
+  "tfw_show_blue_verified_badge:on;tfw_legacy_timeline_sunset:on;" +
+  "tfw_show_gov_verified_badge:on;tfw_show_business_affiliate_badge:on;" +
+  "tfw_tweet_edit_frontend:on";
 
 interface SyndicationTweet {
   text?: string;
@@ -115,14 +134,16 @@ interface SyndicationTweet {
 
 /** Fetch a single X post via Circle-free public syndication CDN. */
 async function fetchTweet(id: string): Promise<{ ok: true; markdown: string; title: string; handle: string | null } | { ok: false; reason: string }> {
-  const url = `https://cdn.syndication.twimg.com/tweet-result?id=${id}&lang=en&token=${syndicationToken(id)}`;
+  const url =
+    `https://cdn.syndication.twimg.com/tweet-result?id=${id}&lang=en` +
+    `&features=${encodeURIComponent(SYNDICATION_FEATURES)}&token=${syndicationToken(id)}`;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   let res: Response;
   try {
     res = await fetch(url, {
       signal: controller.signal,
-      headers: { "User-Agent": "Mozilla/5.0 (compatible; LinePayCite/1.0; +https://linepay.cite)" },
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; SkimflowCite/1.0; +https://skimflow.cite)" },
     });
   } catch {
     return { ok: false, reason: "x_fetch_failed" };

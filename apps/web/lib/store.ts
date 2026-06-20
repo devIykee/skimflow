@@ -106,7 +106,7 @@ export async function getOrCreateVerifyCode(userId: string): Promise<string> {
     [userId]
   );
   if (existing?.verify_code) return existing.verify_code;
-  const code = `linepay-verify-${process.hrtime.bigint().toString(36).slice(-10)}`;
+  const code = `skimflow-verify-${process.hrtime.bigint().toString(36).slice(-10)}`;
   const row = await queryOne<{ verify_code: string }>(
     `UPDATE users SET verify_code = COALESCE(verify_code, $2) WHERE id = $1 RETURNING verify_code`,
     [userId, code]
