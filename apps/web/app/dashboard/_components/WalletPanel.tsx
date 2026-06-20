@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useToast } from "@/components/Toaster";
 import { executeChallenge } from "@/lib/useEmbeddedWallet";
+import { formatUsdc } from "@/lib/money";
 import PayoutWallet from "@/components/PayoutWallet";
 
 const explorer = process.env.NEXT_PUBLIC_ARC_EXPLORER_URL || "https://testnet.arcscan.app";
@@ -69,10 +70,10 @@ export default function WalletPanel({ impersonating }: { impersonating: boolean 
           <div>
             <div className="font-label-caps text-label-caps text-on-surface-variant">USDC balance</div>
             <div className="font-data-mono text-[28px] text-on-surface">
-              {data.balance ? `${data.balance.usdc}` : "—"} <span className="text-[14px] text-outline">USDC</span>
+              {data.balance ? formatUsdc(data.balance.usdc) : "—"} <span className="text-[14px] text-outline">USDC</span>
             </div>
             {data.balance && (
-              <div className="font-body-sm text-[12px] text-outline">Gas: {data.balance.gas}</div>
+              <div className="font-body-sm text-[12px] text-outline">Gas: {formatUsdc(data.balance.gas)}</div>
             )}
           </div>
           <button onClick={() => void load()} className="btn-outline px-3 py-1.5 text-[12px]">
@@ -143,7 +144,7 @@ export default function WalletPanel({ impersonating }: { impersonating: boolean 
                     }`}
                   >
                     {t.kind === "incoming" ? "+" : "−"}
-                    {t.amount} USDC
+                    {formatUsdc(t.amount)} USDC
                   </div>
                   {t.txHash && (
                     <a
@@ -255,7 +256,7 @@ function WithdrawForm({
       <div>
         <h2 className="font-headline-sm text-[15px] font-semibold">Withdraw USDC</h2>
         <p className="font-body-sm text-[12px] text-outline">
-          Send USDC from your wallet to any external address. Available: {balance} USDC.
+          Send USDC from your wallet to any external address. Available: {formatUsdc(balance)} USDC.
         </p>
       </div>
       <div className="flex flex-col gap-2">

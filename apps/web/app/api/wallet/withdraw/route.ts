@@ -65,7 +65,7 @@ export async function POST(req: NextRequest) {
       // over-withdraw — but tell the user we couldn't pre-check.
     }
 
-    const { userToken } = await issueUserToken(user.id);
+    const { userToken, encryptionKey } = await issueUserToken(user.id);
     // Deterministic-ish idempotency key without Math.random (sandbox-safe).
     const idempotencyKey = crypto.randomUUID();
     const { challengeId } = await createTransferChallenge({
@@ -76,7 +76,9 @@ export async function POST(req: NextRequest) {
       idempotencyKey,
     });
 
-    return Response.json({ challengeId, userToken, amount, destination });
+    // encryptionKey is REQUIRED by the W3S SDK's setAuthentication — without it
+    // the PIN page (pw-auth.circle.com) crashes during hydration.
+    return Response.json({ challengeId, userToken, encryptionKey, amount, destination });
   } catch (e) {
     // Circle SDK errors → useful message, not a bare 500.
     if (!(e instanceof HttpError)) {

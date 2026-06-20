@@ -91,107 +91,96 @@ function titleFromMarkdown(md: string, fallback: string): string {
   return (m?.[1] ?? fallback).trim();
 }
 
-/**
- * Extract a tweet/post id from an X / Twitter URL. Covers the status form
- * (`/<handle>/status/123`), the intent form (`/i/web/status/123`), and X
- * long-form "articles" (`/i/article/123` or `/<handle>/article/123`), plus any
- * trailing segments (`/photo/1`, query, etc.).
- */
-function tweetIdFromUrl(u: URL): string | null {
-  const m = u.pathname.match(/\/(?:status(?:es)?|article)\/(\d+)/);
-  return m?.[1] ?? null;
-}
-
-/** Token the public syndication endpoint expects (same scheme react-tweet uses). */
-function syndicationToken(id: string): string {
-  return ((Number(id) / 1e15) * Math.PI).toString(36).replace(/(0+|\.)/g, "");
+/** A paragraph that is nothing but one or more markdown images. */
+function isImageOnlyParagraph(p: string): boolean {
+  const t = p.trim();
+  if (!t) return false;
+  return t.split(/\n+/).every((l) => /^!\[[^\]]*\]\([^)]*\)\s*$/.test(l.trim()));
 }
 
 /**
- * The `features` flags react-tweet sends. Without them the syndication CDN may
- * omit `note_tweet` (the full long-form body), returning only the truncated
- * preview `text`. Including them maximizes the chance we get the real body.
+ * Medium (and similar) export every image as its own block. Left alone, the
+ * article chunker (split on blank lines) turns each image into a standalone
+ * image-only chunk — bad reading, and it fails the chunk-min-line rule. Attach
+ * each image-only paragraph to the nearest adjacent TEXT paragraph (preceding
+ * if present, otherwise the following one) so an image is always media inside a
+ * real chunk, never a chunk of its own.
  */
-const SYNDICATION_FEATURES =
-  "tfw_timeline_list:;tfw_follower_count_sunset:true;tfw_tweet_edit_backend:on;" +
-  "tfw_refsrc_session:on;tfw_fosnr_soft_interventions_enabled:on;" +
-  "tfw_show_birdwatch_pivots_enabled:on;tfw_show_business_verified_badge:on;" +
-  "tfw_duplicate_scribes_to_settings:on;tfw_use_profile_image_shape_enabled:on;" +
-  "tfw_show_blue_verified_badge:on;tfw_legacy_timeline_sunset:on;" +
-  "tfw_show_gov_verified_badge:on;tfw_show_business_affiliate_badge:on;" +
-  "tfw_tweet_edit_frontend:on";
+function attachLoneImages(md: string): string {
+  const paras = md
+    .replace(/\r\n/g, "\n")
+    .split(/\n{2,}/)
+    .map((p) => p.replace(/[ \t]+$/gm, "").trim())
+    .filter((p) => p.length > 0);
 
-interface SyndicationTweet {
-  text?: string;
-  user?: { name?: string; screen_name?: string };
-  photos?: Array<{ url?: string }>;
-  /** Richer media list (images, video posters) — present on most modern posts. */
-  mediaDetails?: Array<{ type?: string; media_url_https?: string }>;
-  /** Long-form ("article" / >280 char) posts carry their full text here. */
-  note_tweet?: { note_tweet_results?: { result?: { text?: string } } };
-  tombstone?: unknown;
+  const out: string[] = [];
+  let leading: string[] = []; // images seen before any text paragraph
+  for (const p of paras) {
+    if (isImageOnlyParagraph(p)) {
+      if (out.length) out[out.length - 1] += "\n" + p; // attach to preceding text
+      else leading.push(p); // defer until we hit text
+    } else {
+      out.push(leading.length ? leading.join("\n") + "\n" + p : p);
+      leading = [];
+    }
+  }
+  // Whole doc was images (no text at all) — keep them together as one block.
+  if (out.length === 0 && leading.length) out.push(leading.join("\n"));
+  else if (leading.length) out[out.length - 1] += "\n" + leading.join("\n");
+  return out.join("\n\n");
 }
 
-/** Fetch a single X post via Circle-free public syndication CDN. */
-async function fetchTweet(id: string): Promise<{ ok: true; markdown: string; title: string; handle: string | null } | { ok: false; reason: string }> {
-  const url =
-    `https://cdn.syndication.twimg.com/tweet-result?id=${id}&lang=en` +
-    `&features=${encodeURIComponent(SYNDICATION_FEATURES)}&token=${syndicationToken(id)}`;
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-  let res: Response;
-  try {
-    res = await fetch(url, {
-      signal: controller.signal,
-      headers: { "User-Agent": "Mozilla/5.0 (compatible; SkimflowCite/1.0; +https://skimflow.cite)" },
-    });
-  } catch {
-    return { ok: false, reason: "x_fetch_failed" };
-  } finally {
-    clearTimeout(timer);
-  }
-  if (res.status === 404) return { ok: false, reason: "x_post_not_found" };
-  if (!res.ok) return { ok: false, reason: "x_unavailable" };
-  let data: SyndicationTweet;
-  try {
-    data = (await res.json()) as SyndicationTweet;
-  } catch {
-    return { ok: false, reason: "x_bad_response" };
-  }
-  // Long-form posts (X "articles" / >280 chars) put the full body in
-  // note_tweet; the top-level `text` is just a truncated preview. Prefer it.
-  const longText = data.note_tweet?.note_tweet_results?.result?.text;
-  const rawText = (longText && longText.trim()) || (data.text ?? "").trim();
-  if (data.tombstone || !rawText) return { ok: false, reason: "x_post_unavailable" };
-  // Strip the trailing t.co media shortlink X appends to the text body — the
-  // image is rendered separately below, so the bare link is just noise.
-  const text = rawText.replace(/\s*https:\/\/t\.co\/\w+\s*$/g, "").trim();
+/** Medium UI artifacts and membership/signup chrome to strip from imports. */
+const MEDIUM_BOILERPLATE: RegExp[] = [
+  /press enter or click to view image in full size/i,
+  /stories in your inbox/i,
+  /join medium for free/i,
+  /remember me for faster sign in/i,
+  /^get\b.*\bin your inbox$/i,
+  /^sign (up|in)$/i,
+  /^follow$/i,
+];
 
-  const handle = data.user?.screen_name ?? null;
-  const name = data.user?.name ?? handle ?? "Unknown";
-  // mediaDetails is the richer source (covers video posters too); fall back to
-  // photos. Dedupe and keep only image URLs.
-  const media = (data.mediaDetails ?? [])
-    .filter((m) => m.type === "photo" || !m.type)
-    .map((m) => m.media_url_https)
-    .filter(Boolean) as string[];
-  const photos = media.length ? media : ((data.photos ?? []).map((p) => p.url).filter(Boolean) as string[]);
-  const md =
-    `${text}\n\n` +
-    photos.map((u) => `![](${u})`).join("\n\n") +
-    (photos.length ? "\n\n" : "") +
-    `— **${name}**${handle ? ` (@${handle})` : ""} on X`;
-  const firstLine = text.split("\n")[0].slice(0, 70).trim();
-  const title = firstLine.length >= 8 ? firstLine : `Post by @${handle ?? "x"}`;
-  return { ok: true, markdown: md.trim(), title, handle };
+function stripMediumBoilerplate(md: string): string {
+  const kept = md.split("\n").filter((line) => {
+    const t = line.trim();
+    if (!t) return true;
+    return !MEDIUM_BOILERPLATE.some((re) => re.test(t));
+  });
+  return kept.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+/** Parse leading `--- … ---` frontmatter into a flat key→value map + the body. */
+function parseFrontmatter(md: string): { data: Record<string, string>; body: string } {
+  const m = md.match(/^﻿?---\n([\s\S]*?)\n---\n?/);
+  if (!m) return { data: {}, body: md };
+  const data: Record<string, string> = {};
+  for (const line of m[1].split("\n")) {
+    const mm = line.match(/^([A-Za-z0-9_-]+)\s*:\s*(.*)$/);
+    if (mm) data[mm[1].toLowerCase()] = mm[2].trim().replace(/^["']|["']$/g, "");
+  }
+  return { data, body: md.slice(m[0].length) };
+}
+
+/** `[a, b]` or `a, b` → `a, b` (comma-separated, brackets/quotes stripped). */
+function normalizeTags(raw: string | undefined): string {
+  if (!raw) return "";
+  return raw
+    .replace(/^\[|\]$/g, "")
+    .split(",")
+    .map((t) => t.trim().replace(/^["']|["']$/g, ""))
+    .filter(Boolean)
+    .join(", ");
 }
 
 /**
  * POST /api/import-url  { url }
- * Fetches remote content (Substack, Medium, X/Twitter, raw GitHub .md, any
- * article URL) and returns readable text:
- *   - .md / raw GitHub → raw text, format 'markdown'
- *   - HTML article     → Readability-extracted, converted to markdown, 'article'
+ * Supports exactly two sources:
+ *   - GitHub `.md` (raw or blob) → an Agent Skill (format 'markdown'), with
+ *     frontmatter mapped to title/summary/tags.
+ *   - Medium / article HTML      → Readability-extracted, converted to markdown,
+ *     images attached to adjacent text, Medium boilerplate stripped ('article').
+ * X/Twitter import was retired — users copy-paste X content into the editor.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -222,32 +211,16 @@ export async function POST(req: NextRequest) {
 
     const source = detectPlatform(target.toString());
 
-    // ── X / Twitter posts: use the syndication API, not page scraping ─────────
+    // ── X / Twitter import retired — copy-paste into the editor instead ───────
     if (source.platform === "x") {
-      const id = tweetIdFromUrl(target);
-      if (!id) {
-        return Response.json(
-          { error: "x_needs_post", message: "Paste a link to a specific X post (…/status/123…), not a profile." },
-          { status: 422 }
-        );
-      }
-      const tweet = await fetchTweet(id);
-      if (!tweet.ok) {
-        const message =
-          tweet.reason === "x_post_not_found"
-            ? "That X post wasn't found (it may be deleted or from a protected account)."
-            : "Couldn't load that X post — it may be protected, deleted, or temporarily unavailable.";
-        return Response.json({ error: tweet.reason, message }, { status: 422 });
-      }
-      return Response.json({
-        title: tweet.title,
-        content: tweet.markdown,
-        format: "article",
-        contentType: "x-post",
-        sourceUrl: target.toString(),
-        sourcePlatform: "x",
-        authorHandle: tweet.handle ?? source.authorHandle,
-      });
+      return Response.json(
+        {
+          error: "x_import_removed",
+          message:
+            "X posts aren't imported. Copy the post text and paste it into the editor below — it publishes as a single chunk.",
+        },
+        { status: 422 }
+      );
     }
 
     // GitHub blob pages serve HTML chrome, not file content — fetch the raw URL
@@ -296,17 +269,28 @@ export async function POST(req: NextRequest) {
     }
     const text = new TextDecoder().decode(buf);
 
-    // Raw markdown path (.md / raw GitHub) → treat as an agent-skills doc.
+    // Raw markdown path (.md / raw GitHub) → an Agent Skill. Map frontmatter to
+    // title/summary/tags; if name/description are missing, flag needsMetadata so
+    // the editor requires the creator to fill them before publishing (no
+    // silently-incomplete skills) rather than blocking the import outright.
     if (isRawMarkdown(fetchTarget)) {
       if (text.trim().length < 40) {
         return Response.json({ error: "empty_document", message: "That file looks empty." }, { status: 422 });
       }
-      const fallback = target.pathname.split("/").pop() ?? "Imported document";
+      const fallback = (target.pathname.split("/").pop() ?? "Imported document").replace(/\.(md|markdown)$/i, "");
+      const { data } = parseFrontmatter(text);
+      const title = (data.name || data.title || titleFromMarkdown(text, fallback)).trim();
+      const summary = data.description || data.summary || "";
+      const tags = normalizeTags(data.tags);
+      const needsMetadata = !data.name && !data.title ? true : !data.description && !data.summary;
       return Response.json({
-        title: titleFromMarkdown(text, fallback.replace(/\.(md|markdown)$/i, "")),
+        title,
         content: text,
+        summary,
+        tags,
         format: "markdown",
         contentType: "agent-skills",
+        needsMetadata,
         sourceUrl: target.toString(),
         sourcePlatform: source.platform,
         authorHandle: source.authorHandle,
@@ -331,7 +315,10 @@ export async function POST(req: NextRequest) {
       );
     }
     const turndown = new TurndownService({ headingStyle: "atx", codeBlockStyle: "fenced" });
-    const markdown = turndown.turndown(article.content);
+    const rawMarkdown = turndown.turndown(article.content);
+    // Post-process: drop Medium platform chrome, then make sure no image stands
+    // alone as its own paragraph (so it can't become an image-only chunk).
+    const markdown = attachLoneImages(stripMediumBoilerplate(rawMarkdown));
 
     return Response.json({
       title: (article.title ?? dom.window.document.title ?? "Imported article").trim(),

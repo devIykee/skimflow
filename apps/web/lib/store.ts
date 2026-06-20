@@ -18,6 +18,10 @@ import type {
   PayerKind,
   PaySessionRow,
   Payout,
+  Report,
+  ReportEnriched,
+  ReportStatus,
+  ReportType,
   User,
   UserRole,
 } from "./types.js";
@@ -360,8 +364,8 @@ export interface CreateContentInput {
   body: string;
   pricePerBlock: string; // decimal USDC
   gatewayAddress?: string | null;
-  /** Chunks to store, in order. */
-  chunks: Array<{ text: string; isFree: boolean }>;
+  /** Chunks to store, in order. Picture posts also carry imageUrl/caption. */
+  chunks: Array<{ text: string; isFree: boolean; imageUrl?: string | null; caption?: string | null }>;
   /** block_index of the first chunk. Articles use 0 (chunk 0 is the free
    * preview); agent-skills use 1 (block 0 is the generated onboarding). */
   firstBlockIndex?: number;
@@ -407,8 +411,9 @@ export async function createContent(input: CreateContentInput): Promise<Content>
     for (let i = 0; i < input.chunks.length; i++) {
       const c = input.chunks[i];
       await client.query(
-        `INSERT INTO chunks (content_id, block_index, text, is_free) VALUES ($1,$2,$3,$4)`,
-        [content.id, base + i, c.text, c.isFree]
+        `INSERT INTO chunks (content_id, block_index, text, is_free, image_url, caption)
+         VALUES ($1,$2,$3,$4,$5,$6)`,
+        [content.id, base + i, c.text, c.isFree, c.imageUrl ?? null, c.caption ?? null]
       );
     }
     return content;
@@ -461,7 +466,7 @@ export function listContentByCreator(creatorId: string): Promise<Content[]> {
 
 export interface MarketplaceFilters {
   contentType?: ContentType;
-  /** Content types to exclude (e.g. exclude 'x-post' from the All feed). */
+  /** Content types to exclude (e.g. exclude 'agent-skills' from the All feed). */
   excludeTypes?: ContentType[];
   minPrice?: string;
   maxPrice?: string;
@@ -1136,4 +1141,90 @@ export function updateExportJob(
      WHERE id = $1 RETURNING *`,
     [id, patch.status ?? null, patch.rowCount ?? null, patch.filePath ?? null, patch.completed ?? false]
   );
+}
+
+// ── Reports (admin moderation inbox) ─────────────────────────────────────────
+export interface CreateReportInput {
+  reportType: ReportType;
+  reason?: string | null;
+  detail?: string | null;
+  contentId?: string | null;
+  blockIndex?: number | null;
+  creatorId?: string | null;
+  reporterId?: string | null;
+  reporterLabel?: string | null;
+  amountPaid?: string | null;
+}
+
+export function createReport(input: CreateReportInput): Promise<Report> {
+  return queryOne<Report>(
+    `INSERT INTO reports
+       (report_type, reason, detail, content_id, block_index, creator_id,
+        reporter_id, reporter_label, amount_paid)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+    [
+      input.reportType,
+      input.reason ?? null,
+      input.detail ?? null,
+      input.contentId ?? null,
+      input.blockIndex ?? null,
+      input.creatorId ?? null,
+      input.reporterId ?? null,
+      input.reporterLabel ?? null,
+      input.amountPaid ?? null,
+    ]
+  ) as Promise<Report>;
+}
+
+/** List reports for the admin inbox, newest first, optionally by status. */
+export function listReports(status?: ReportStatus, limit = 200): Promise<ReportEnriched[]> {
+  const params: unknown[] = [];
+  let where = "";
+  if (status) {
+    params.push(status);
+    where = `WHERE r.status = $${params.length}`;
+  }
+  params.push(Math.min(limit, 500));
+  return query<ReportEnriched>(
+    `SELECT r.*, c.title AS content_title, c.slug AS content_slug, u.handle AS creator_handle
+       FROM reports r
+       LEFT JOIN content c ON c.id = r.content_id
+       LEFT JOIN users u   ON u.id = r.creator_id
+       ${where}
+      ORDER BY r.created_at DESC
+      LIMIT $${params.length}`,
+    params
+  );
+}
+
+export function setReportStatus(id: string, status: ReportStatus): Promise<Report | undefined> {
+  return queryOne<Report>(
+    `UPDATE reports SET status = $2, updated_at = NOW() WHERE id = $1 RETURNING *`,
+    [id, status]
+  );
+}
+
+export function openReportCount(): Promise<number> {
+  return queryOne<{ n: string }>(`SELECT COUNT(*)::int AS n FROM reports WHERE status = 'open'`, []).then(
+    (r) => Number(r?.n ?? 0)
+  );
+}
+
+/**
+ * Count distinct paying readers for a specific content block (or the whole
+ * content when blockIndex is null). Used by the §5d content lock — once this
+ * crosses the threshold a chunk/image can only be removed by an admin.
+ */
+export function countPaidReaders(contentId: string, blockIndex?: number | null): Promise<number> {
+  const params: unknown[] = [contentId];
+  let blockClause = "";
+  if (blockIndex != null) {
+    params.push(blockIndex);
+    blockClause = ` AND block_index = $${params.length}`;
+  }
+  return queryOne<{ n: string }>(
+    `SELECT COUNT(DISTINCT payer_id)::int AS n FROM payment_ledger
+      WHERE content_id = $1 AND status = 'completed'${blockClause}`,
+    params
+  ).then((r) => Number(r?.n ?? 0));
 }

@@ -8,12 +8,14 @@
 export type UserRole = "creator" | "admin";
 /** Which wallet the active payout (`wallet_address`) points at. */
 export type WalletSource = "embedded" | "external";
-export type ContentType = "article" | "agent-skills" | "x-post";
+export type ContentType = "article" | "agent-skills" | "picture";
 export type ContentStatus = "draft" | "published" | "suspended";
 export type PayerKind = "human" | "agent";
 export type LedgerStatus = "pending" | "completed" | "failed";
 export type PayoutStatus = "initiated" | "confirmed" | "failed";
 export type ExportStatus = "pending" | "processing" | "complete" | "failed";
+export type ReportType = "broken_link" | "content_report";
+export type ReportStatus = "open" | "reviewed" | "resolved" | "dismissed";
 
 export interface User {
   id: string;
@@ -69,6 +71,10 @@ export interface Chunk {
   block_index: number;
   text: string;
   is_free: boolean;
+  /** Picture Skim-Flow only (migration 0009): the (normalized) image link and
+   * optional caption. null for text/agent-skills chunks. */
+  image_url: string | null;
+  caption: string | null;
 }
 
 export interface LedgerRow {
@@ -137,7 +143,8 @@ export type AdminEventType =
   | "PAYOUT"
   | "402_HIT"
   | "WEBHOOK_REJECTED"
-  | "IMPERSONATE";
+  | "IMPERSONATE"
+  | "REPORT";
 
 export interface AdminEvent {
   id: string;
@@ -164,6 +171,29 @@ export interface AgentSession {
   total_402_hits: number;
   total_unlocks: number;
   total_spent_usdc: string;
+}
+
+export interface Report {
+  id: string;
+  report_type: ReportType;
+  reason: string | null;
+  detail: string | null;
+  content_id: string | null;
+  block_index: number | null;
+  creator_id: string | null;
+  reporter_id: string | null;
+  reporter_label: string | null;
+  amount_paid: string | null;
+  status: ReportStatus;
+  created_at: Date;
+  updated_at: Date;
+}
+
+/** A report joined with its content + creator for the admin inbox. */
+export interface ReportEnriched extends Report {
+  content_title: string | null;
+  content_slug: string | null;
+  creator_handle: string | null;
 }
 
 export interface ExportJob {

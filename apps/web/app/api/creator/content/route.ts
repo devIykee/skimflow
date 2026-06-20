@@ -11,6 +11,8 @@ import {
   recordAdminEvent,
 } from "@/lib/store";
 import { chunkContent } from "@/lib/chunk-content";
+import { validateArticleChunks, hasBlockingErrors } from "@/lib/chunk-validate";
+import { normalizeImageUrl, isLikelyImageUrl, MAX_SKIMFLOW_IMAGES, MAX_CAPTION_CHARS } from "@/lib/image-links";
 import { normalizeUsdc } from "@/lib/money";
 import { notifyFirstPublish } from "@/lib/email";
 import { detectPlatform } from "@/lib/ownership";
@@ -50,6 +52,7 @@ export async function POST(req: NextRequest) {
       title?: string;
       contentType?: ContentType;
       body?: string;
+      images?: Array<{ url?: string; caption?: string }>;
       pricePerBlock?: string | number;
       summary?: string;
       tags?: string;
@@ -58,9 +61,8 @@ export async function POST(req: NextRequest) {
     };
 
     if (!body.title?.trim()) return Response.json({ error: "missing_title" }, { status: 400 });
-    if (!body.body?.trim()) return Response.json({ error: "missing_body" }, { status: 400 });
     const contentType: ContentType =
-      body.contentType === "agent-skills" ? "agent-skills" : body.contentType === "x-post" ? "x-post" : "article";
+      body.contentType === "agent-skills" ? "agent-skills" : body.contentType === "picture" ? "picture" : "article";
 
     let pricePerBlock: string;
     try {
@@ -69,17 +71,62 @@ export async function POST(req: NextRequest) {
       return Response.json({ error: "invalid_price" }, { status: 400 });
     }
 
-    const format = contentType === "agent-skills" ? "markdown" : "article";
-    const chunks = chunkContent({ content: body.body, format });
-    if (chunks.length === 0) return Response.json({ error: "no_chunks", message: "Content produced no blocks." }, { status: 400 });
+    // Build the chunks to store, per content type.
+    let toStore: Array<{ text: string; isFree: boolean; imageUrl?: string | null; caption?: string | null }>;
+    let firstBlockIndex: number;
+    let storedBody: string;
 
-    // article: chunk 0 is the free preview (block_index 0), rest payable (1..N).
-    // agent-skills: block 0 is generated; store creator blocks at 1..N.
-    const toStore =
-      contentType === "agent-skills"
-        ? chunks.map((c) => ({ text: c.text, isFree: false }))
-        : chunks.map((c, i) => ({ text: c.text, isFree: i === 0 }));
-    const firstBlockIndex = contentType === "agent-skills" ? 1 : 0;
+    if (contentType === "picture") {
+      // Picture Skim-Flow: each image is a chunk (block 0 = free preview image).
+      const images = Array.isArray(body.images) ? body.images : [];
+      if (images.length === 0) return Response.json({ error: "no_images", message: "Add at least one image." }, { status: 400 });
+      if (images.length > MAX_SKIMFLOW_IMAGES)
+        return Response.json({ error: "too_many_images", message: `Maximum ${MAX_SKIMFLOW_IMAGES} images per post.` }, { status: 400 });
+
+      // Store the (gated) image URL in `text` so the existing unlock path —
+      // which returns chunk `text` after payment — delivers the image link; the
+      // caption rides along in its own column as an always-visible label.
+      toStore = images.map((im, i) => {
+        const url = normalizeImageUrl(String(im.url ?? ""));
+        const caption = String(im.caption ?? "").slice(0, MAX_CAPTION_CHARS);
+        return { text: url, isFree: i === 0, imageUrl: url, caption };
+      });
+      if (toStore.some((c) => !c.imageUrl || !isLikelyImageUrl(c.imageUrl)))
+        return Response.json({ error: "invalid_image", message: "One of the image links isn't a valid URL." }, { status: 400 });
+      firstBlockIndex = 0;
+      storedBody = ""; // body is unused for picture posts
+    } else {
+      if (!body.body?.trim()) return Response.json({ error: "missing_body" }, { status: 400 });
+      const format = contentType === "agent-skills" ? "markdown" : "article";
+      const chunks = chunkContent({ content: body.body, format });
+      if (chunks.length === 0) return Response.json({ error: "no_chunks", message: "Content produced no blocks." }, { status: 400 });
+
+      // Chunk-limit validation (article only). Block PUBLISH on errors so an
+      // abusive or malformed split can't go live; drafts are always saveable so
+      // work is never lost mid-edit.
+      if (contentType === "article" && body.status === "published") {
+        const results = validateArticleChunks(chunks.map((c) => c.text));
+        if (hasBlockingErrors(results)) {
+          return Response.json(
+            {
+              error: "chunk_validation",
+              message: "Some chunks don't meet the limits. Fix them or use Auto-chunk, then publish.",
+              chunks: results.filter((r) => r.errors.length > 0),
+            },
+            { status: 400 }
+          );
+        }
+      }
+
+      // article: chunk 0 is the free preview (block_index 0), rest payable (1..N).
+      // agent-skills: block 0 is generated; store creator blocks at 1..N.
+      toStore =
+        contentType === "agent-skills"
+          ? chunks.map((c) => ({ text: c.text, isFree: false }))
+          : chunks.map((c, i) => ({ text: c.text, isFree: i === 0 }));
+      firstBlockIndex = contentType === "agent-skills" ? 1 : 0;
+      storedBody = body.body;
+    }
 
     const gatewayAddress =
       process.env.CIRCLE_GATEWAY_ADDRESS ||
@@ -116,7 +163,7 @@ export async function POST(req: NextRequest) {
       summary: body.summary ?? "",
       tags: body.tags ?? "",
       contentType,
-      body: body.body,
+      body: storedBody,
       pricePerBlock,
       gatewayAddress,
       chunks: toStore,

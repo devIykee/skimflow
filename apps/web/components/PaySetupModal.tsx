@@ -5,6 +5,7 @@ import { useSignMessage } from "wagmi";
 import { readContract, writeContract, waitForTransactionReceipt, switchChain } from "@wagmi/core";
 import { erc20Abi, parseUnits } from "viem";
 import type { Address } from "viem";
+import { formatUsdc } from "@/lib/money";
 import { useToast } from "@/components/Toaster";
 import { wagmiConfig } from "@/lib/wagmi";
 import { getOrCreateSessionAccount } from "@/lib/session-key-client";
@@ -223,7 +224,7 @@ export default function PaySetupModal({ mainWallet, kind = "external", suggested
       const data = await res.json();
       if (!res.ok || !data.ok) throw new Error(data.friendly ?? data.error ?? "Setup failed.");
 
-      toast("success", `Silent payments on — up to ${data.cap} USDC, no more popups.`);
+      toast("success", `Silent payments on — up to ${formatUsdc(data.cap)} USDC, no more popups.`);
       onReady(data as PaySessionInfo);
     } catch (e) {
       const msg = String((e as { shortMessage?: string; message?: string })?.shortMessage ?? (e as Error)?.message ?? e);

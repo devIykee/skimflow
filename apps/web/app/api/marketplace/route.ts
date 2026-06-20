@@ -11,8 +11,8 @@ export async function GET(req: NextRequest) {
   const type = (sp.get("type") as ContentType | null) ?? undefined;
   const rows = await listPublished({
     contentType: type,
-    // The "All" feed (no type filter) mixes human content — articles + X posts —
-    // but NOT agent skills, which live only in their own tab.
+    // The "All" feed (no type filter) mixes human content — articles + Skim-Flow
+    // picture posts — but NOT agent skills, which live only in their own tab.
     excludeTypes: type ? undefined : ["agent-skills"],
     minPrice: sp.get("minPrice") ?? undefined,
     maxPrice: sp.get("maxPrice") ?? undefined,

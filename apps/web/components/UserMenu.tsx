@@ -50,7 +50,7 @@ export default function UserMenu() {
         onClick={() => setOpen((o) => !o)}
         aria-label="Account menu"
         aria-expanded={open}
-        className="relative flex h-9 w-9 items-center justify-center overflow-hidden rounded-full border border-surface/30 bg-surface/10 text-surface transition-colors hover:bg-surface/20"
+        className="relative flex h-9 w-9 items-center justify-center overflow-hidden rounded-full border border-outline-variant bg-surface-container-high text-on-surface transition-colors hover:bg-surface-container-highest"
       >
         {signedIn && user?.image ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -62,7 +62,7 @@ export default function UserMenu() {
         )}
         {/* Wallet-connected indicator dot. */}
         {isConnected && (
-          <span className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border-2 border-inverse-surface bg-secondary" />
+          <span className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border-2 border-surface bg-secondary" />
         )}
       </button>
 

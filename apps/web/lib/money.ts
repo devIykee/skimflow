@@ -42,6 +42,16 @@ export function formatUsd(base: bigint | string): string {
   return `$${toDecimal(base)}`;
 }
 
+/**
+ * User-facing USDC display — always 2 decimals (e.g. "0.05"). Use everywhere a
+ * USDC amount is shown to a reader/creator; the admin views keep full precision.
+ * Full 6-decimal precision is preserved in all ledger/payment calculations.
+ */
+export function formatUsdc(v: string | number | null | undefined): string {
+  const n = Number(v ?? 0);
+  return Number.isFinite(n) ? n.toFixed(2) : "0.00";
+}
+
 /** Sum a list of decimal USDC strings, returning a decimal string. */
 export function sumDecimal(values: ReadonlyArray<string | number | bigint>): string {
   let total = 0n;

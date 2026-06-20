@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { formatUsdc } from "@/lib/money";
 
 interface Earnings { totalEarned: string; pendingPayout: string; todayEarned: string; unlocks: number }
 interface Payout { id: string; amount: string; wallet_address: string; tx_hash: string | null; status: string; created_at: string }
@@ -30,7 +31,7 @@ export default function EarningsPanel({ impersonating, walletLinked }: { imperso
     try {
       const r = await fetch("/api/creator/payout", { method: "POST", credentials: "include" });
       const d = await r.json();
-      setMsg(r.ok ? `Payout of ${d.payout.amount} USDC initiated.` : d.message ?? "Payout failed");
+      setMsg(r.ok ? `Payout of ${formatUsdc(d.payout.amount)} USDC initiated.` : d.message ?? "Payout failed");
       load();
     } finally {
       setBusy(false);
@@ -42,9 +43,9 @@ export default function EarningsPanel({ impersonating, walletLinked }: { imperso
   return (
     <div className="flex flex-col gap-6">
       <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-        <Stat label="Total earned (all time)" value={`${earnings.totalEarned} USDC`} />
-        <Stat label="Pending payout" value={`${earnings.pendingPayout} USDC`} />
-        <Stat label="Earned today" value={`${earnings.todayEarned} USDC`} />
+        <Stat label="Total earned (all time)" value={`${formatUsdc(earnings.totalEarned)} USDC`} />
+        <Stat label="Pending payout" value={`${formatUsdc(earnings.pendingPayout)} USDC`} />
+        <Stat label="Earned today" value={`${formatUsdc(earnings.todayEarned)} USDC`} />
       </div>
 
       <div className="card">
@@ -73,7 +74,7 @@ export default function EarningsPanel({ impersonating, walletLinked }: { imperso
             {payouts.map((p) => (
               <tr key={p.id} className="border-b border-outline-variant">
                 <td className="py-2 text-[12px]">{new Date(p.created_at).toLocaleString()}</td>
-                <td>{p.amount} USDC</td>
+                <td>{formatUsdc(p.amount)} USDC</td>
                 <td>{p.status}</td>
                 <td>{p.tx_hash ? <a className="text-primary" href={`${explorer}/tx/${p.tx_hash}`} target="_blank" rel="noreferrer">{p.tx_hash.slice(0, 10)}…</a> : "—"}</td>
               </tr>

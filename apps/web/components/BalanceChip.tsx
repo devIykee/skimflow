@@ -77,14 +77,31 @@ export default function BalanceChip({ pricePerBlock, onTopUp }: Props) {
 
   if (!state.active) return null;
 
+  // Always display 2 decimals to users; full precision stays in the backend.
+  const fmt = (v?: string) => (v != null ? Number(v).toFixed(2) : "0.00");
+  const remaining = Number(state.remaining ?? "0");
+  const nextBlock = pricePerBlock ? Number(pricePerBlock) : 0;
+  // Can't cover the next unlock — prompt a top-up (low-but-nonzero / depleted).
+  const insufficient = nextBlock > 0 && remaining < nextBlock;
+
   return (
-    <div className="inline-flex items-center gap-2 rounded-full border border-secondary/30 bg-secondary/5 px-3 py-1.5 font-data-mono text-[12px] text-secondary">
+    <div
+      className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 font-data-mono text-[12px] ${
+        insufficient ? "border-primary/40 bg-primary/5 text-primary" : "border-secondary/30 bg-secondary/5 text-secondary"
+      }`}
+    >
       <span className="material-symbols-outlined text-[15px]">bolt</span>
-      <span title={`Cap ${state.cap} · spent ${state.spent}`}>{state.remaining} USDC left</span>
-      {onTopUp && (
-        <button onClick={onTopUp} className="text-primary hover:underline" title="Raise your cap">
-          top up
+      <span title={`Cap ${fmt(state.cap)} · spent ${fmt(state.spent)}`}>${fmt(state.remaining)} left</span>
+      {insufficient && onTopUp ? (
+        <button onClick={onTopUp} className="font-label-caps text-primary hover:underline">
+          {remaining <= 0 ? "Add funds to read" : "Top up to continue"}
         </button>
+      ) : (
+        onTopUp && (
+          <button onClick={onTopUp} className="text-primary hover:underline" title="Raise your cap">
+            top up
+          </button>
+        )
       )}
       <button onClick={revoke} className="text-outline hover:text-on-surface" title="End silent payments">
         ✕

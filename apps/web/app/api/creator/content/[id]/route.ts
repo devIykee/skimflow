@@ -1,11 +1,17 @@
 import { NextRequest } from "next/server";
 import { assertNotImpersonating, errorResponse, resolveActingUser } from "@/lib/session";
-import { deleteContent, getContentById, updateContent } from "@/lib/store";
+import { deleteContent, getContentById, updateContent, countPaidReaders, createReport } from "@/lib/store";
 import { chunkContent } from "@/lib/chunk-content";
 import { normalizeUsdc } from "@/lib/money";
 import type { ContentStatus, ContentType } from "@/lib/types";
 
 export const runtime = "nodejs";
+
+// §5d: once content has been paid for it's protected against creator removal /
+// substantive edit. Past this many distinct paid readers it hard-locks and only
+// an admin can remove it; below it, removal needs explicit confirmation and
+// leaves a report-trail.
+const LOCK_THRESHOLD = 1000;
 
 async function ownOr404(id: string, userId: string) {
   const content = await getContentById(id);
@@ -47,6 +53,33 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
       }
     }
 
+    // Re-chunking replaces the stored chunks — a substantive edit. Guard it the
+    // same way as deletion once readers have paid (§5d).
+    if (body.body?.trim()) {
+      const paid = await countPaidReaders(content.id);
+      if (paid >= LOCK_THRESHOLD) {
+        return Response.json(
+          { error: "locked_admin_only", message: `This content has ${paid} paid readers and can only be changed by an admin.` },
+          { status: 403 }
+        );
+      }
+      if (paid > 0 && req.nextUrl.searchParams.get("confirm") !== "1") {
+        return Response.json(
+          { error: "needs_confirm", needsConfirm: true, paid, message: `${paid} reader(s) have paid for this content.` },
+          { status: 409 }
+        );
+      }
+      if (paid > 0) {
+        await createReport({
+          reportType: "content_report",
+          reason: "creator_removed_paid",
+          contentId: content.id,
+          creatorId: content.creator_id,
+          detail: `Creator substantively edited content with ${paid} paid reader(s).`,
+        });
+      }
+    }
+
     let rechunk;
     if (body.body?.trim()) {
       const contentType = content.content_type as ContentType;
@@ -77,14 +110,39 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
   }
 }
 
-/** DELETE — remove the creator's own content. */
-export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {
+/** DELETE — remove the creator's own content (subject to the §5d paid-content lock). */
+export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   try {
     const actor = await resolveActingUser();
     assertNotImpersonating(actor);
     const { id } = await ctx.params;
     const content = await ownOr404(id, actor.user.id);
     if (!content) return Response.json({ error: "not_found" }, { status: 404 });
+
+    const paid = await countPaidReaders(content.id);
+    if (paid >= LOCK_THRESHOLD) {
+      return Response.json(
+        { error: "locked_admin_only", message: `This content has ${paid} paid readers and can only be removed by an admin.` },
+        { status: 403 }
+      );
+    }
+    if (paid > 0 && req.nextUrl.searchParams.get("confirm") !== "1") {
+      return Response.json(
+        { error: "needs_confirm", needsConfirm: true, paid, message: `${paid} reader(s) have paid for this content.` },
+        { status: 409 }
+      );
+    }
+    if (paid > 0) {
+      // Removing paid content is allowed but recorded for review (§5d).
+      await createReport({
+        reportType: "content_report",
+        reason: "creator_removed_paid",
+        contentId: content.id,
+        creatorId: content.creator_id,
+        detail: `Creator removed content with ${paid} paid reader(s).`,
+      });
+    }
+
     await deleteContent(id);
     return Response.json({ ok: true });
   } catch (e) {

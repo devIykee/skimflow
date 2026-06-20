@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { requireUser, errorResponse } from "@/lib/session";
 import { chunkContent } from "@/lib/chunk-content";
+import { validateArticleChunks } from "@/lib/chunk-validate";
 import { previewSplit } from "@/lib/split-payment";
 import { buildBlock0 } from "@/lib/agent-skills";
 import { normalizeUsdc } from "@/lib/money";
@@ -27,6 +28,10 @@ export async function POST(req: NextRequest) {
     const contentType: ContentType = b.contentType === "agent-skills" ? "agent-skills" : "article";
     const format = contentType === "agent-skills" ? "markdown" : "article";
     const chunks = chunkContent({ content: b.body ?? "", format });
+
+    // Per-chunk validation (article only) so the editor can show live line/word
+    // counts and inline errors before the creator hits Publish.
+    const validation = contentType === "article" ? validateArticleChunks(chunks.map((c) => c.text)) : null;
     // The price arrives live as the user types, so it can be mid-edit ("", "0.",
     // ".5"). normalizeUsdc throws on those — treat anything unparseable as 0 so
     // the preview never 500s (real validation happens on publish).
@@ -58,8 +63,20 @@ export async function POST(req: NextRequest) {
     }
 
     return Response.json({
-      blocks: chunks.map((c) => ({ index: c.index, preview: c.text.slice(0, 280), length: c.text.length })),
+      blocks: chunks.map((c) => {
+        const v = validation?.[c.index];
+        return {
+          index: c.index,
+          preview: c.text.slice(0, 280),
+          length: c.text.length,
+          lines: v?.lines,
+          words: v?.words,
+          errors: v?.errors ?? [],
+          warnings: v?.warnings ?? [],
+        };
+      }),
       payableBlocks: payableCount,
+      hasErrors: validation ? validation.some((r) => r.errors.length > 0) : false,
       split,
       block0Template,
     });

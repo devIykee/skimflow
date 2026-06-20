@@ -38,7 +38,10 @@ export default async function ReaderPage({ params }: { params: Promise<{ slug: s
         id: c.id,
         blockIndex: c.block_index,
         isFree: c.is_free,
+        // For picture posts `text` holds the (gated) image URL; the caption is an
+        // always-visible label, so it's sent regardless of lock state.
         text: c.is_free ? c.text : null,
+        caption: c.caption,
       }))}
     />
   );

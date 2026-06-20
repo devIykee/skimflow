@@ -9,12 +9,14 @@ import { erc20Abi } from "viem";
 import type { Address } from "viem";
 import { useToast } from "@/components/Toaster";
 import { wagmiConfig } from "@/lib/wagmi";
+import { formatUsdc } from "@/lib/money";
 import { buildSessionPayment } from "@/lib/session-key-client";
 import { useEmbeddedWallet } from "@/lib/useEmbeddedWallet";
 import PaySetupModal, { type PaySessionInfo } from "@/components/PaySetupModal";
 import BalanceChip, { PAY_SESSION_EVENT } from "@/components/BalanceChip";
 import RichText from "@/components/RichText";
 import ShareButton from "@/components/ShareButton";
+import ReportButton from "@/components/ReportButton";
 
 const ARC_CHAIN_ID = Number(process.env.NEXT_PUBLIC_ARC_CHAIN_ID ?? "5042002");
 
@@ -56,6 +58,8 @@ interface ChunkView {
   blockIndex: number;
   isFree: boolean;
   text: string | null;
+  /** Picture Skim-Flow: caption label (always shown); image URL rides in `text`. */
+  caption?: string | null;
 }
 
 interface Props {
@@ -72,6 +76,7 @@ interface Props {
 
 export default function ChunkReader(props: Props) {
   const { slug, title, summary, creatorHandle, pricePerBlock, chunks, agentUrl } = props;
+  const isPicture = props.contentType === "picture";
   const storageKey = `skimflow_reader_${slug}`;
 
   const [unlocked, setUnlocked] = useState<Record<number, string>>({});
@@ -150,7 +155,7 @@ export default function ChunkReader(props: Props) {
   }, [chunks, unlocked]);
   const unlockedPayable = payable.filter((c) => unlockedChunkIds.has(c.id)).length;
   const nextLocked = payable.find((c) => !unlockedChunkIds.has(c.id));
-  const spent = (unlockedPayable * Number(pricePerBlock)).toFixed(6);
+  const spent = (unlockedPayable * Number(pricePerBlock)).toFixed(2);
 
   /** Fetch a fresh quote (price + recipient) for a block. */
   async function quoteBlock(blockIndex: number) {
@@ -362,6 +367,7 @@ export default function ChunkReader(props: Props) {
         </Link>
         <div className="flex items-center gap-3">
           <ShareButton slug={slug} title={title} />
+          <ReportButton contentSlug={slug} />
           {hasWallet && <BalanceChip pricePerBlock={pricePerBlock} onTopUp={() => setShowSetup(true)} />}
         </div>
       </div>
@@ -382,7 +388,7 @@ export default function ChunkReader(props: Props) {
       </div>
       <h1 className="font-display-lg text-display-lg-mobile">{title}</h1>
       <p className="mb-2 font-body-md text-on-surface-variant">
-        by @{creatorHandle ?? "unknown"} · {pricePerBlock} USDC/block
+        by @{creatorHandle ?? "unknown"} · {formatUsdc(pricePerBlock)} USDC/{isPicture ? "image" : "block"}
       </p>
 
       {/* Progress */}
@@ -400,6 +406,10 @@ export default function ChunkReader(props: Props) {
           const text = c.isFree ? c.text : unlocked[c.blockIndex];
           const isUnlocked = text !== undefined && text !== null;
           if (isUnlocked) {
+            // Picture Skim-Flow: the unlocked `text` is the image URL.
+            if (isPicture) {
+              return <SkimImage key={c.id} src={text} caption={c.caption} slug={slug} blockIndex={c.blockIndex} />;
+            }
             return (
               <article key={c.id}>
                 <RichText source={text} />
@@ -440,12 +450,13 @@ export default function ChunkReader(props: Props) {
                     </div>
                   ) : (
                     <>
+                      {/* Platform-wide rule: the unlock button always reads
+                          "Read on" — never the price, and the price is not shown
+                          anywhere adjacent to it. */}
                       <button onClick={() => unlock(c.blockIndex)} disabled={paying !== null} className="btn-primary px-8 py-3">
                         {paying === c.blockIndex
                           ? sessionActive ? "Unlocking…" : walletKind === "embedded" ? "Setting up…" : "Confirm in wallet…"
-                          : sessionActive
-                            ? `Unlock · ${pricePerBlock} USDC`
-                            : `Read on — ${pricePerBlock} USDC/block`}
+                          : "Read on"}
                       </button>
                       {!sessionActive && walletKind === "external" && (
                         <button
@@ -487,5 +498,63 @@ export default function ChunkReader(props: Props) {
         />
       )}
     </div>
+  );
+}
+
+/**
+ * A single Skim-Flow image. The <img> load runs in parallel with payment (no
+ * blocking pre-check). If the link is dead the reader isn't blocked from
+ * advancing; for an image they've already paid for, we offer "Report this
+ * issue" which files a broken_link report into the admin inbox (§5b).
+ */
+function SkimImage({
+  src,
+  caption,
+  slug,
+  blockIndex,
+}: {
+  src: string;
+  caption?: string | null;
+  slug: string;
+  blockIndex: number;
+}) {
+  const [broken, setBroken] = useState(false);
+  const [reported, setReported] = useState(false);
+
+  async function report() {
+    try {
+      await fetch("/api/reports", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ reportType: "broken_link", reason: "broken_link", contentSlug: slug, blockIndex }),
+      });
+    } finally {
+      setReported(true);
+    }
+  }
+
+  if (broken) {
+    return (
+      <figure className="flex flex-col items-center gap-2 rounded-xl border border-outline-variant bg-surface-container-low/60 p-8 text-center">
+        <span className="material-symbols-outlined text-[28px] text-outline">broken_image</span>
+        <span className="font-body-sm text-[13px] text-on-surface-variant">This image is no longer available.</span>
+        {reported ? (
+          <span className="font-body-sm text-[12px] text-secondary">Reported — thanks, our team will review it.</span>
+        ) : (
+          <button onClick={report} className="font-body-sm text-[12px] text-primary hover:underline">
+            Report this issue
+          </button>
+        )}
+        {caption && <figcaption className="font-body-sm text-[12px] text-outline">{caption}</figcaption>}
+      </figure>
+    );
+  }
+
+  return (
+    <figure className="overflow-hidden rounded-xl">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={src} alt={caption ?? ""} onError={() => setBroken(true)} className="w-full rounded-xl object-contain" />
+      {caption && <figcaption className="mt-2 font-body-sm text-[13px] text-on-surface-variant">{caption}</figcaption>}
+    </figure>
   );
 }

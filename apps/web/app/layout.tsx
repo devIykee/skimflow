@@ -90,6 +90,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 <Link className="font-body-sm text-body-sm text-on-surface-variant hover:text-primary" href="/docs">Docs</Link>
                 <Link className="font-body-sm text-body-sm text-on-surface-variant hover:text-primary" href="/for-you">For You</Link>
                 <Link className="font-body-sm text-body-sm text-on-surface-variant hover:text-primary" href="/dashboard">Dashboard</Link>
+                <Link className="font-body-sm text-body-sm text-on-surface-variant hover:text-primary" href="/terms">Terms</Link>
               </div>
             </div>
           </footer>

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { formatUsdc } from "@/lib/money";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // "For You" — a social feed of pay-per-block content. Tabs strictly separate the
@@ -28,19 +29,19 @@ interface FeedItem {
   agentUrl?: string | null;
 }
 
-type TabKey = "all" | "article" | "agent-skills" | "x-post";
+type TabKey = "all" | "article" | "agent-skills" | "picture";
 
 const TABS: { key: TabKey; label: string }[] = [
   { key: "all", label: "All" },
   { key: "article", label: "Articles" },
+  { key: "picture", label: "Skim-Flow" },
   { key: "agent-skills", label: "Agent Skills" },
-  { key: "x-post", label: "Posts" },
 ];
 
 const TYPE_LABEL: Record<string, string> = {
   article: "Article",
   "agent-skills": "Agent Skills",
-  "x-post": "X Post",
+  picture: "Skim-Flow",
 };
 
 const PAGE = 12;
@@ -286,7 +287,7 @@ export default function ForYouPage() {
                 {typeof c.blockCount === "number" && c.blockCount > 0 && (
                   <span className="text-outline">{c.blockCount} blocks</span>
                 )}
-                <span className="rounded-full bg-secondary/10 px-2 py-0.5 text-secondary">{c.pricePerBlock} USDC</span>
+                <span className="rounded-full bg-secondary/10 px-2 py-0.5 text-secondary">{formatUsdc(c.pricePerBlock)} USDC</span>
               </div>
             </div>
           </Link>
@@ -358,13 +359,13 @@ function EmptyState({ tab, q }: { tab: TabKey; q: string }) {
       </div>
     );
   }
-  if (tab === "x-post") {
+  if (tab === "picture") {
     return (
       <div className="mt-2 flex flex-col items-center gap-2 rounded-xl border border-dashed border-outline-variant bg-surface-container-lowest p-10 text-center">
-        <span className="material-symbols-outlined text-[28px] text-primary">tag</span>
-        <h3 className="font-headline-sm text-headline-sm">No posts yet</h3>
+        <span className="material-symbols-outlined text-[28px] text-primary">collections</span>
+        <h3 className="font-headline-sm text-headline-sm">No Skim-Flows yet</h3>
         <p className="max-w-md font-body-sm text-body-sm text-on-surface-variant">
-          Imported X posts show up here. Creators can bring in a post from the dashboard and monetize it.
+          Skim-Flow posts — pay-per-image picture sequences — show up here. Creators can publish one from the dashboard.
         </p>
       </div>
     );
