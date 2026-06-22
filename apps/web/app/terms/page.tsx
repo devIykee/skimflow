@@ -45,13 +45,13 @@ export default function TermsPage() {
         <p>
           Skimflow lets creators publish content that readers unlock and pay for in small amounts of USDC, settled on
           the Arc network via Circle Gateway. Content may be a chunked article (paid per block), an Agent Skill, or a
-          Picture Skim-Flow (paid per image).
+          Picture Skimflow (paid per image).
         </p>
       </Section>
 
       <Section n="2" title="Payment model">
         <p>
-          You pay per block (for articles) or per image (for Skim-Flow). To make reading seamless, unlocking is{" "}
+          You pay per block (for articles) or per image (for Skimflow). To make reading seamless, unlocking is{" "}
           <strong>optimistic</strong>: content may be shown to you before its payment is fully confirmed on-chain, with
           the payment settling in the background. The final block or image of a piece is always confirmed before it is
           shown.
@@ -65,7 +65,7 @@ export default function TermsPage() {
 
       <Section n="3" title="No refunds by default, with a broken-link exception">
         <p>
-          Completed unlocks are generally <strong>non-refundable</strong>. The one exception: if a paid Skim-Flow image
+          Completed unlocks are generally <strong>non-refundable</strong>. The one exception: if a paid Skimflow image
           becomes unavailable because its externally-hosted link is dead or unshared, you may file a report (see below)
           for review. Resolution (refund, credit, or otherwise) is at the platform&apos;s discretion following that
           review. Filing a report does not guarantee a refund; it guarantees the issue is reviewed.
@@ -91,7 +91,7 @@ export default function TermsPage() {
 
       <Section n="6" title="Externally-hosted content">
         <p>
-          Skim-Flow images are added by creators as links to externally-hosted files (for example, Google Drive), not
+          Skimflow images are added by creators as links to externally-hosted files (for example, Google Drive), not
           uploaded to Skimflow. We do not control or guarantee the continued availability of externally-hosted content.
           Creators are responsible for keeping their linked content accessible; our liability for content becoming
           unavailable is limited to the report/review process described above.

@@ -77,7 +77,7 @@ export default function DocsPage() {
         {[
           ["article", "Essays, reporting, blog posts, short fiction, anything prose. Readers get a clean reading view, unlocking block by block."],
           ["book", "Serialized, long-form fiction or non-fiction. Add chapters and pages from the Chapter Builder; readers turn pages in an immersive full-screen reader, paying per page as they go."],
-          ["picture", "A Skim-Flow: an ordered sequence of images. The first is a free preview; each image after it unlocks on its own. Great for photo essays, comics, or step-by-steps."],
+          ["picture", "A Skimflow: an ordered sequence of images. The first is a free preview; each image after it unlocks on its own. Great for photo essays, comics, or step-by-steps."],
           ["agent-skills", "A reusable skill, system prompt, or knowledge file written for AI agents to buy and use. Served as Markdown at a machine-friendly endpoint."],
         ].map(([k, d]) => (
           <li key={k} className="rounded-lg border border-on-surface/10 bg-surface-container-lowest p-3">
@@ -100,7 +100,7 @@ export default function DocsPage() {
       <H2 id="publish">Publishing</H2>
       <p className="font-body-md text-on-surface-variant">
         The easy way: open the <Link href="/dashboard" className="text-primary">Creator Dashboard</Link>, sign in
-        with Google or GitHub, add a payout wallet, and hit <strong>New content</strong> for an article, Skim-Flow, or
+        with Google or GitHub, add a payout wallet, and hit <strong>New content</strong> for an article, Skimflow, or
         agent skill. Paste your text or image links, set a price, publish. Done in under a minute. Writing long-form?
         Use <strong>New book</strong> to open the Chapter Builder: add chapters, split pages with a{" "}
         <span className="font-data-mono text-body-sm">---</span> line, and publish the whole book at once.
@@ -128,7 +128,7 @@ export default function DocsPage() {
       </p>
       <p className="mt-stack-md font-body-md text-on-surface-variant">
         <strong>Books</strong> open in an immersive full-screen reader: turn pages by tapping the edges, swiping, or the
-        arrow keys, and each new page is paid for invisibly as you reach it. <strong>Skim-Flows</strong> reveal one image
+        arrow keys, and each new page is paid for invisibly as you reach it. <strong>Skimflows</strong> reveal one image
         at a time. Any reader can also unlock the whole piece at once for the bulk discount.
       </p>
 
@@ -145,7 +145,7 @@ export default function DocsPage() {
         <li><strong>One block at a time.</strong> Tap <em>Read on</em> at a blurred block to reveal it. The first tap runs a quick one-time setup; after that each block unlocks silently with no popup.</li>
         <li><strong>The whole piece at once.</strong> Prefer not to tap block by block? Use <strong>Unlock the whole piece</strong> to reveal everything in a single payment, with a 5% bulk discount off the per-block total.</li>
         <li><strong>Reading fuel.</strong> A small gauge shows how much you have left to spend. When it runs low, add funds to keep reading without interruptions.</li>
-        <li><strong>Books and Skim-Flows</strong> work the same way: turn the page (or reveal the next image) and it unlocks as you reach it.</li>
+        <li><strong>Books and Skimflows</strong> work the same way: turn the page (or reveal the next image) and it unlocks as you reach it.</li>
       </ul>
 
       <H2 id="agents">How AI agents buy (the interesting part)</H2>

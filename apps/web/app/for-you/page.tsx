@@ -36,7 +36,7 @@ const TABS: { key: TabKey; label: string }[] = [
   { key: "all", label: "All" },
   { key: "article", label: "Articles" },
   { key: "book", label: "Books" },
-  { key: "picture", label: "Skim-Flow" },
+  { key: "picture", label: "Skimflow" },
   { key: "agent-skills", label: "Agent Skills" },
 ];
 
@@ -44,7 +44,7 @@ const TYPE_LABEL: Record<string, string> = {
   article: "Article",
   book: "Book",
   "agent-skills": "Agent Skills",
-  picture: "Skim-Flow",
+  picture: "Skimflow",
 };
 
 const PAGE = 12;
@@ -126,9 +126,10 @@ export default function ForYouPage() {
         let rows = raw;
         if (searching) {
           // Search hits all types; keep the active tab's content. "All" mixes
-          // human-readable content (articles, posts, books) but never agent skills.
+          // human content (articles + posts) but never books or agent skills —
+          // books stay in their own tab so their cover cards don't distort the feed.
           rows = rows.filter((r) =>
-            tab === "all" ? r.contentType !== "agent-skills" : r.contentType === tab
+            tab === "all" ? r.contentType !== "agent-skills" && r.contentType !== "book" : r.contentType === tab
           );
         }
         if (verifiedOnly && !searching) rows = rows.filter((r) => r.creatorVerified);
@@ -416,9 +417,9 @@ function EmptyState({ tab, q }: { tab: TabKey; q: string }) {
     return (
       <div className="mt-2 flex flex-col items-center gap-2 rounded-xl border border-dashed border-outline-variant bg-surface-container-lowest p-10 text-center">
         <span className="material-symbols-outlined text-[28px] text-primary">collections</span>
-        <h3 className="font-headline-sm text-headline-sm">No Skim-Flows yet</h3>
+        <h3 className="font-headline-sm text-headline-sm">No Skimflows yet</h3>
         <p className="max-w-md font-body-sm text-body-sm text-on-surface-variant">
-          Skim-Flow posts (pay-per-image picture sequences) show up here. Creators can publish one from the dashboard.
+          Skimflow posts (pay-per-image picture sequences) show up here. Creators can publish one from the dashboard.
         </p>
       </div>
     );

@@ -80,7 +80,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <header className="sticky top-0 z-50 border-b border-outline-variant bg-surface/90 shadow-sm backdrop-blur">
             <nav className="relative mx-auto flex max-w-max-width items-center justify-between px-margin-mobile pb-4 pt-[max(1rem,env(safe-area-inset-top))] md:px-margin-desktop">
               <Link href="/" className="flex items-center gap-2" aria-label="Skimflow home">
-                <Logo className="h-8 w-8 shrink-0 rounded-md" />
+                <Logo className="h-10 w-10 shrink-0" />
                 <span className="font-headline-sm text-headline-sm font-bold text-on-surface [&>span]:text-primary">
                   Skim<span>flow</span>
                 </span>
@@ -104,7 +104,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <footer className="border-t border-outline-variant bg-surface-container-low">
             <div className="mx-auto flex max-w-max-width flex-col items-center justify-between gap-stack-md px-margin-mobile py-stack-lg md:flex-row md:px-margin-desktop">
               <div className="flex items-center gap-2">
-                <Logo className="h-6 w-6 shrink-0 rounded" />
+                <Logo className="h-8 w-8 shrink-0" />
                 <span className="label-caps text-on-surface">SKIMFLOW</span>
               </div>
               <div className="font-body-sm text-body-sm text-on-surface-variant">

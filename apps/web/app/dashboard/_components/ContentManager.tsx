@@ -341,7 +341,7 @@ export default function ContentManager({ impersonating }: { impersonating: boole
           <div className="flex flex-wrap gap-3">
             <select value={contentType} onChange={(e) => setContentType(e.target.value as "article" | "agent-skills" | "picture")} className="rounded-lg border border-outline px-3 py-2 text-body-sm">
               <option value="article">Article (chunked)</option>
-              <option value="picture">Picture Skim-Flow (per-image)</option>
+              <option value="picture">Picture Skimflow (per-image)</option>
               <option value="agent-skills">Agent Skills (per-block)</option>
             </select>
             <div className="flex items-center gap-2">

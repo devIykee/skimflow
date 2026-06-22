@@ -11,10 +11,10 @@ export async function GET(req: NextRequest) {
   const type = (sp.get("type") as ContentType | null) ?? undefined;
   const rows = await listPublished({
     contentType: type,
-    // The "All" feed (no type filter) aggregates human-readable content —
-    // articles, Skim-Flow picture posts, and books — but NOT agent skills, which
-    // are machine-facing and live in their own tab.
-    excludeTypes: type ? undefined : ["agent-skills"],
+    // The "All" feed (no type filter) mixes human content — articles + Skimflow
+    // picture posts — but NOT books or agent skills. Books live only in their own
+    // tab (their cover-grid card size doesn't fit the mixed feed layout).
+    excludeTypes: type ? undefined : ["agent-skills", "book"],
     minPrice: sp.get("minPrice") ?? undefined,
     maxPrice: sp.get("maxPrice") ?? undefined,
     sort: (sp.get("sort") as "newest" | "popular" | null) ?? undefined,
