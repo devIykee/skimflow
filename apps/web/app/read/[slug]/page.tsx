@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import { getChapters, getChunks, getContentWithCreator, incrementView } from "@/lib/store";
+import { getChapters, getChunks, getContentWithCreator, getUserById, incrementView } from "@/lib/store";
+import { currentSession } from "@/lib/session";
 import ChunkReader from "./_components/ChunkReader";
 import BookReader from "./_components/BookReader";
 
@@ -64,6 +65,18 @@ export default async function ReaderPage({ params }: { params: Promise<{ slug: s
   void incrementView(content.id);
   const chunks = await getChunks(content.id);
 
+  // The creator (and admins) read their own piece in full, free — so we hand the
+  // client every block's text up front and tell it to skip the paywall entirely.
+  const viewer = await currentSession();
+  let isOwner = false;
+  if (viewer?.user?.id) {
+    isOwner = content.creator_id === viewer.user.id;
+    if (!isOwner) {
+      const vu = await getUserById(viewer.user.id);
+      isOwner = vu?.role === "admin";
+    }
+  }
+
   // Structured data so Google understands the piece (author, dates, paywall).
   const author = content.creator_name || (content.creator_handle ? `@${content.creator_handle}` : "Skimflow");
   const jsonLd = {
@@ -100,13 +113,14 @@ export default async function ReaderPage({ params }: { params: Promise<{ slug: s
           title={content.title}
           creatorHandle={content.creator_handle}
           pricePerBlock={content.price_per_block}
+          isOwner={isOwner}
           chapters={chapters.map((ch) => ({ id: ch.id, index: ch.chapter_index, title: ch.title }))}
           pages={chunks.map((c) => ({
             id: c.id,
             blockIndex: c.block_index,
             isFree: c.is_free,
             chapterId: c.chapter_id,
-            text: c.is_free ? c.text : null,
+            text: c.is_free || isOwner ? c.text : null,
           }))}
         />
       </>
@@ -123,6 +137,7 @@ export default async function ReaderPage({ params }: { params: Promise<{ slug: s
         creatorHandle={content.creator_handle}
         contentType={content.content_type}
         pricePerBlock={content.price_per_block}
+        isOwner={isOwner}
         verifiedSource={content.ownership_verified ? (content.source_platform ?? "source") : null}
         agentUrl={content.content_type === "agent-skills" ? `/read/${content.slug}/agent-skills.md` : null}
         chunks={chunks.map((c) => ({
@@ -130,8 +145,9 @@ export default async function ReaderPage({ params }: { params: Promise<{ slug: s
           blockIndex: c.block_index,
           isFree: c.is_free,
           // For picture posts `text` holds the (gated) image URL; the caption is an
-          // always-visible label, so it's sent regardless of lock state.
-          text: c.is_free ? c.text : null,
+          // always-visible label, so it's sent regardless of lock state. Owners
+          // receive every block's text up front (they read their own work free).
+          text: c.is_free || isOwner ? c.text : null,
           caption: c.caption,
         }))}
       />

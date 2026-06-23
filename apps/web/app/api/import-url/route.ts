@@ -60,29 +60,64 @@ const BROWSER_UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 const GOOGLEBOT_UA = "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)";
 
+/** From a `srcset` ("urlA 320w, urlB 1024w"), pick the highest-resolution URL. */
+function pickLargestSrcset(val: string | null): string | null {
+  if (!val) return null;
+  const candidates = val
+    .split(",")
+    .map((s) => s.trim())
+    .map((s) => {
+      const [url, desc] = s.split(/\s+/);
+      const w = desc && /^\d+w$/.test(desc) ? parseInt(desc, 10) : 0;
+      return { url, w };
+    })
+    .filter((c) => c.url);
+  if (!candidates.length) return null;
+  candidates.sort((a, b) => b.w - a.w); // largest first; 0-width keeps source order
+  return candidates[0].url || null;
+}
+
 /**
  * Publishers (Medium, Substack) lazy-load images: the real URL sits in
  * `data-src` / `data-srcset` / `srcset` while `src` is a 1px placeholder or
  * empty. Readability + Turndown only read `src`, so without this the imported
- * markdown gets blank/placeholder images. Promote the best real URL into `src`
- * so it survives into `![](…)`.
+ * markdown gets blank/placeholder images. Promote the best (largest) real URL
+ * into `src` so it survives into `![](…)`.
  */
 function normalizeLazyImages(doc: Document): void {
   for (const img of Array.from(doc.querySelectorAll("img"))) {
-    const pick = (val: string | null): string | null => {
-      if (!val) return null;
-      // srcset → take the first (usually largest/first candidate) URL.
-      const first = val.split(",")[0]?.trim().split(/\s+/)[0];
-      return first || null;
-    };
     const current = img.getAttribute("src") ?? "";
     const isPlaceholder = !current || current.startsWith("data:") || /\b1x1\b|placeholder|spacer/i.test(current);
     if (!isPlaceholder) continue;
     const real =
       img.getAttribute("data-src") ||
-      pick(img.getAttribute("data-srcset")) ||
-      pick(img.getAttribute("srcset"));
+      pickLargestSrcset(img.getAttribute("data-srcset")) ||
+      pickLargestSrcset(img.getAttribute("srcset"));
     if (real) img.setAttribute("src", real);
+  }
+}
+
+/**
+ * Strip author avatars, bylines, icons and other tiny chrome images BEFORE
+ * Readability runs. Medium leads every article with the writer's circular
+ * profile photo (served as `…/resize:fill:64:64/…` or `/fit/c/…`), which would
+ * otherwise become the article's first — and, behind the paywall, only visible —
+ * image. We drop images that are explicitly small (≤96px on a side) or whose
+ * URL/class marks them as an avatar, so the real content images lead instead.
+ */
+function dropAvatarAndTinyImages(doc: Document): void {
+  for (const img of Array.from(doc.querySelectorAll("img"))) {
+    const w = parseInt(img.getAttribute("width") || "0", 10);
+    const h = parseInt(img.getAttribute("height") || "0", 10);
+    const src = `${img.getAttribute("src") || ""} ${img.getAttribute("data-src") || ""} ${img.getAttribute("srcset") || ""}`;
+    const meta = `${img.getAttribute("class") || ""} ${img.getAttribute("alt") || ""} ${img.getAttribute("role") || ""}`;
+    const tiny = (w > 0 && w <= 96) || (h > 0 && h <= 96);
+    // `resize:fill:` and `/fit/c/` are Medium's square-crop (avatar/thumbnail)
+    // transforms; content images use `resize:fit:`. Plus generic avatar hints.
+    const avatarHint =
+      /resize:fill:|\/fit\/c\/|avatar|gravatar|profile|byline/i.test(src) ||
+      /avatar|profile|author|byline|icon/i.test(meta);
+    if (tiny || avatarHint) img.remove();
   }
 }
 
@@ -299,7 +334,10 @@ export async function POST(req: NextRequest) {
 
     // HTML article path — Readability + Turndown.
     const dom = new JSDOM(text, { url: fetchTarget.toString() });
+    // Order matters: promote real lazy URLs first, then drop avatars/tiny chrome
+    // (some avatars only reveal their size once the lazy src is resolved).
     normalizeLazyImages(dom.window.document);
+    dropAvatarAndTinyImages(dom.window.document);
     const article = new Readability(dom.window.document).parse();
     // Reject pages that aren't real articles (login walls, link dumps, SPAs that
     // render nothing server-side, etc.) so garbage never lands in the feed.

@@ -17,6 +17,7 @@ import {
   setLedgerMintTx,
 } from "@/lib/store";
 import { settlePendingByToken } from "@/lib/settle";
+import { currentSession } from "@/lib/session";
 import {
   arc,
   batchingRequirements,
@@ -86,6 +87,20 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ slug: stri
     if (!chunk) return Response.json({ error: "block_not_found" }, { status: 404 });
     if (chunk.is_free && !wantsWhole) {
       return Response.json({ free: true, blockIndex, text: chunk.text });
+    }
+
+    // Creators (and admins) read their own work in full, free — they already own
+    // it, so there's nothing to charge. This is the authoritative gate; the
+    // reader UI also renders the owner's blocks directly, so it normally never
+    // even reaches this route, but the bypass keeps the API honest either way.
+    const viewer = await currentSession();
+    if (viewer?.user?.id) {
+      let isOwner = content.creator_id === viewer.user.id;
+      if (!isOwner) {
+        const vu = await getUserById(viewer.user.id);
+        isOwner = vu?.role === "admin";
+      }
+      if (isOwner) return Response.json({ free: true, owner: true, blockIndex, text: chunk.text });
     }
 
     const creator = await getUserById(content.creator_id);

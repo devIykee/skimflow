@@ -8,6 +8,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RainbowKitProvider, lightTheme, darkTheme } from "@rainbow-me/rainbowkit";
 import { wagmiConfig } from "@/lib/wagmi";
 import { ToastProvider } from "@/components/Toaster";
+import DepositWatcher from "@/components/DepositWatcher";
 
 /**
  * Client provider tree for the on-chain marketplace. Wraps the whole app so the
@@ -42,7 +43,10 @@ export default function Providers({ children }: { children: React.ReactNode }) {
       <WagmiProvider config={wagmiConfig}>
         <QueryClientProvider client={queryClient}>
           <RainbowKitProvider theme={rkTheme}>
-            <ToastProvider>{children}</ToastProvider>
+            <ToastProvider>
+              <DepositWatcher />
+              {children}
+            </ToastProvider>
           </RainbowKitProvider>
         </QueryClientProvider>
       </WagmiProvider>

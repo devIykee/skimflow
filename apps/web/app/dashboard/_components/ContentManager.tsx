@@ -62,6 +62,9 @@ export default function ContentManager({ impersonating }: { impersonating: boole
   const [importUrl, setImportUrl] = useState("");
   const [busy, setBusy] = useState(false);
   const [published, setPublished] = useState<{ readerUrl: string; agentUrl?: string } | null>(null);
+  // When set, the editor is updating an existing piece (PATCH) rather than
+  // creating a new one (POST). Its content_type is locked while editing.
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   // Import provenance (recorded for attribution; no ownership-verification gate).
   const [sourceUrl, setSourceUrl] = useState<string | null>(null);
@@ -172,10 +175,83 @@ export default function ContentManager({ impersonating }: { impersonating: boole
     toast("info", "Re-grouped into chunks that meet the limits. Review the preview below.");
   }
 
+  function resetEditor() {
+    setTitle(""); setBody(""); setSummary(""); setTags(""); setPreview(null);
+    setSourceUrl(null); setSourcePlatform(null); setNeedsMeta(false); setImages([]);
+    setEditingId(null);
+  }
+
+  /** Load one of the creator's pieces into the editor to update it. */
+  async function startEdit(id: string) {
+    setBusy(true);
+    try {
+      const r = await fetch(`/api/creator/content/${id}`, { credentials: "include" });
+      const d = await r.json();
+      if (!r.ok) {
+        toast("error", d.message ?? d.error ?? "Couldn't load that piece.");
+        return;
+      }
+      const c = d.content;
+      setEditingId(c.id);
+      setTitle(c.title ?? "");
+      setSummary(c.summary ?? "");
+      setTags(c.tags ?? "");
+      setPrice(String(c.price_per_block ?? "0.05"));
+      setContentType((c.content_type as "article" | "agent-skills" | "picture") ?? "article");
+      setBody(c.content_type === "picture" ? "" : (c.body ?? ""));
+      setImages(c.content_type === "picture" ? (d.images ?? []) : []);
+      setPublished(null);
+      toast("info", "Loaded into the editor below. Make your changes, then Update.");
+      if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function publish(status: "draft" | "published") {
     setBusy(true);
     setPublished(null);
     try {
+      // Editing an existing piece → PATCH it (re-chunks when the body changed);
+      // otherwise create a new one.
+      if (editingId) {
+        const r = await fetch(`/api/creator/content/${editingId}`, {
+          method: "PATCH",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title,
+            body: contentType === "picture" ? undefined : body,
+            pricePerBlock: price,
+            summary,
+            tags,
+            status,
+          }),
+        });
+        const d = await r.json();
+        if (r.ok && d.ok) {
+          resetEditor();
+          loadList();
+          toast("success", status === "published" ? "Updated and live." : "Changes saved.");
+        } else if (d.needsConfirm) {
+          if (confirm(`${d.paid} reader(s) have paid for this. Editing the text is recorded for review. Save anyway?`)) {
+            const r2 = await fetch(`/api/creator/content/${editingId}?confirm=1`, {
+              method: "PATCH",
+              credentials: "include",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ title, body: contentType === "picture" ? undefined : body, pricePerBlock: price, summary, tags, status }),
+            });
+            if (r2.ok) { resetEditor(); loadList(); toast("success", "Changes saved."); }
+            else { const d2 = await r2.json().catch(() => ({})); toast("error", d2.message ?? d2.error ?? "Update failed."); }
+          }
+        } else if (d.walletRequired) {
+          toast("info", d.message ?? "Create a payout wallet before publishing.");
+        } else {
+          toast("error", d.message ?? d.error ?? "Update failed.");
+        }
+        return;
+      }
+
       const r = await fetch("/api/creator/content", {
         method: "POST",
         credentials: "include",
@@ -335,11 +411,18 @@ export default function ContentManager({ impersonating }: { impersonating: boole
 
       {/* Editor */}
       <div className="card">
-        <h2 className="mb-4 font-headline-sm text-headline-sm">New content</h2>
+        <div className="mb-4 flex items-center justify-between gap-2">
+          <h2 className="font-headline-sm text-headline-sm">{editingId ? "Edit content" : "New content"}</h2>
+          {editingId && (
+            <button onClick={resetEditor} disabled={busy} className="font-label-caps text-label-caps text-outline hover:text-primary">
+              Cancel edit
+            </button>
+          )}
+        </div>
         <div className="flex flex-col gap-3">
           <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Title" className="rounded-lg border border-outline px-3 py-2 text-body-md" />
           <div className="flex flex-wrap gap-3">
-            <select value={contentType} onChange={(e) => setContentType(e.target.value as "article" | "agent-skills" | "picture")} className="rounded-lg border border-outline px-3 py-2 text-body-sm">
+            <select value={contentType} onChange={(e) => setContentType(e.target.value as "article" | "agent-skills" | "picture")} disabled={!!editingId} className="rounded-lg border border-outline px-3 py-2 text-body-sm disabled:opacity-60">
               <option value="article">Article (chunked)</option>
               <option value="picture">Picture Skimflow (per-image)</option>
               <option value="agent-skills">Agent Skills (per-block)</option>
@@ -420,7 +503,7 @@ export default function ContentManager({ impersonating }: { impersonating: boole
           {contentType !== "picture" && (
             <button onClick={() => setShowChunks((s) => !s)} disabled={!preview} className="btn-outline px-5 py-2">Preview Chunks</button>
           )}
-          <button onClick={() => publish("draft")} disabled={busy || disabled || !title || !hasContent} className="btn-outline px-5 py-2">Save Draft</button>
+          <button onClick={() => publish("draft")} disabled={busy || disabled || !title || !hasContent} className="btn-outline px-5 py-2">{editingId ? "Save as draft" : "Save Draft"}</button>
           <button
             onClick={() => publish("published")}
             disabled={
@@ -430,7 +513,7 @@ export default function ContentManager({ impersonating }: { impersonating: boole
             }
             className="btn-primary px-6 py-2"
           >
-            Publish to Feed
+            {editingId ? "Update" : "Publish to Feed"}
           </button>
         </div>
 
@@ -510,6 +593,9 @@ export default function ContentManager({ impersonating }: { impersonating: boole
                   <td>{formatUsdc(c.price_per_block)} USDC</td>
                   <td>{c.status}</td>
                   <td className="flex gap-1 py-2">
+                    {c.content_type !== "book" && (
+                      <button disabled={disabled || busy} onClick={() => startEdit(c.id)} className="btn-outline px-2 py-1 text-[11px]">Edit</button>
+                    )}
                     <button disabled={disabled} onClick={() => toggle(c.id, c.status)} className="btn-outline px-2 py-1 text-[11px]">{c.status === "published" ? "Unpublish" : "Publish"}</button>
                     <button disabled={disabled} onClick={() => remove(c.id)} className="btn-outline px-2 py-1 text-[11px] text-red-600">Delete</button>
                   </td>

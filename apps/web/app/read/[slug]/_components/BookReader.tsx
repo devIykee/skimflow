@@ -32,6 +32,8 @@ interface Props {
   pricePerBlock: string;
   chapters: ChapterMeta[];
   pages: PageView[];
+  /** Viewer owns this book (creator/admin): every page free, no paywall. */
+  isOwner?: boolean;
 }
 
 const SWIPE_THRESHOLD = 50;
@@ -43,7 +45,7 @@ const SWIPE_THRESHOLD = 50;
  * chrome (top bar + bottom progress). Advancing into a not-yet-paid page fires a
  * silent session-key payment invisibly; the first page is always free.
  */
-export default function BookReader({ slug, title, creatorHandle, pricePerBlock, chapters, pages }: Props) {
+export default function BookReader({ slug, title, creatorHandle, pricePerBlock, chapters, pages, isOwner = false }: Props) {
   const storageKey = `skimflow_reader_${slug}`;
   const posKey = `skimflow_reader_pos_${slug}`;
   const bookmarksKey = `skimflow_reader_bookmarks_${slug}`;
@@ -181,12 +183,12 @@ export default function BookReader({ slug, title, creatorHandle, pricePerBlock, 
   }, [chapters]);
 
   const isPageUnlocked = useCallback(
-    (p: PageView) => p.isFree || unlocked[p.blockIndex] !== undefined,
-    [unlocked]
+    (p: PageView) => isOwner || p.isFree || unlocked[p.blockIndex] !== undefined,
+    [unlocked, isOwner]
   );
 
   function pageText(p: PageView): string | null {
-    return p.isFree ? p.text : unlocked[p.blockIndex] ?? null;
+    return p.isFree || isOwner ? p.text : unlocked[p.blockIndex] ?? null;
   }
 
   async function quoteBlock(blockIndex: number) {
@@ -455,7 +457,7 @@ export default function BookReader({ slug, title, creatorHandle, pricePerBlock, 
               bookmark
             </span>
           </button>
-          {hasWallet && <ReadingFuel pricePerBlock={pricePerBlock} onTopUp={() => setShowSetup(true)} />}
+          {hasWallet && !isOwner && <ReadingFuel pricePerBlock={pricePerBlock} onTopUp={() => setShowSetup(true)} />}
         </div>
       </div>
 
@@ -521,7 +523,7 @@ export default function BookReader({ slug, title, creatorHandle, pricePerBlock, 
           chromeVisible ? "translate-y-0" : "translate-y-full"
         }`}
       >
-        {!allUnlocked && payable.length > 0 && hasWallet && (
+        {!isOwner && !allUnlocked && payable.length > 0 && hasWallet && (
           <button
             onClick={() => unlockWhole()}
             disabled={paying !== null}

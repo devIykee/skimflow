@@ -71,12 +71,16 @@ interface Props {
   pricePerBlock: string;
   agentUrl: string | null;
   verifiedSource?: string | null;
+  /** The viewer is this piece's creator (or an admin): read in full, free, with
+   *  an Edit link and no paywall chrome. */
+  isOwner?: boolean;
   chunks: ChunkView[];
 }
 
 export default function ChunkReader(props: Props) {
   const { slug, title, summary, creatorHandle, pricePerBlock, chunks, agentUrl } = props;
   const isPicture = props.contentType === "picture";
+  const isOwner = props.isOwner ?? false;
   const storageKey = `skimflow_reader_${slug}`;
   // Reading-progress save point — the top-most block the reader had reached, so
   // we can drop them back there on return instead of at the top.
@@ -219,9 +223,9 @@ export default function ChunkReader(props: Props) {
   const payable = chunks.filter((c) => !c.isFree);
   const unlockedChunkIds = useMemo(() => {
     const set = new Set<string>();
-    for (const c of chunks) if (c.isFree || unlocked[c.blockIndex] !== undefined) set.add(c.id);
+    for (const c of chunks) if (c.isFree || isOwner || unlocked[c.blockIndex] !== undefined) set.add(c.id);
     return set;
-  }, [chunks, unlocked]);
+  }, [chunks, unlocked, isOwner]);
   const unlockedPayable = payable.filter((c) => unlockedChunkIds.has(c.id)).length;
   const nextLocked = payable.find((c) => !unlockedChunkIds.has(c.id));
   const allUnlocked = payable.length > 0 && unlockedPayable === payable.length;
@@ -633,7 +637,7 @@ export default function ChunkReader(props: Props) {
         </Link>
         {/* Compact toolbar: the Reading-Fuel pill grouped with icon-only actions. */}
         <div className="flex items-center gap-1">
-          {hasWallet && <ReadingFuel pricePerBlock={pricePerBlock} onTopUp={() => setShowSetup(true)} />}
+          {hasWallet && !isOwner && <ReadingFuel pricePerBlock={pricePerBlock} onTopUp={() => setShowSetup(true)} />}
           <ShareButton slug={slug} title={title} iconOnly />
           <ReportButton contentSlug={slug} iconOnly />
         </div>
@@ -664,9 +668,23 @@ export default function ChunkReader(props: Props) {
 
       {summary && <p className="mb-6 border-l-4 border-outline-variant pl-4 font-body-lg text-on-surface-variant">{summary}</p>}
 
+      {/* Owner view: this is your work — read it free, jump to the editor. */}
+      {isOwner && (
+        <div className="mb-8 flex items-center justify-between gap-3 rounded-xl border border-secondary/30 bg-secondary/5 px-4 py-3 font-body-sm text-secondary">
+          <span className="inline-flex items-center gap-2">
+            <span className="material-symbols-outlined text-[18px]">edit_note</span>
+            This is your piece, so every block is unlocked for you.
+          </span>
+          <Link href="/dashboard" className="font-label-caps text-label-caps text-primary hover:underline">
+            Edit in dashboard →
+          </Link>
+        </div>
+      )}
+
       {/* Whole-piece upsell — the single place a price is shown. Skip the bulk
-          discount math for a one-block piece (nothing to discount). */}
-      {!allUnlocked && payable.length > 1 && hasWallet && (
+          discount math for a one-block piece (nothing to discount). Owners read
+          free, so never show them the upsell. */}
+      {!isOwner && !allUnlocked && payable.length > 1 && hasWallet && (
         <button
           onClick={() => unlockWhole()}
           disabled={paying !== null}
@@ -681,7 +699,7 @@ export default function ChunkReader(props: Props) {
 
       <div className="flex flex-col gap-4">
         {chunks.map((c) => {
-          const text = c.isFree ? c.text : unlocked[c.blockIndex];
+          const text = c.isFree || isOwner ? c.text : unlocked[c.blockIndex];
           const isUnlocked = text !== undefined && text !== null;
           let inner: ReactNode;
           if (isUnlocked) {
@@ -801,7 +819,7 @@ export default function ChunkReader(props: Props) {
 
       {error && <p className="mt-4 font-body-sm text-[13px] text-primary">{error}</p>}
 
-      {payable.length > 0 && unlockedPayable === payable.length && (
+      {!isOwner && payable.length > 0 && unlockedPayable === payable.length && (
         <div className="mt-8 flex items-center justify-center gap-2 rounded-xl border border-secondary/30 bg-secondary/5 p-6 text-center font-body-md text-secondary">
           <span className="material-symbols-outlined text-[20px]">check_circle</span>
           Fully unlocked. Every block paid the creator directly.

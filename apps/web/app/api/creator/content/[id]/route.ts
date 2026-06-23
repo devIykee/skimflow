@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { assertNotImpersonating, errorResponse, resolveActingUser } from "@/lib/session";
-import { deleteContent, getContentById, updateContent, countPaidReaders, createReport } from "@/lib/store";
+import { deleteContent, getContentById, getChunks, updateContent, countPaidReaders, createReport } from "@/lib/store";
 import { chunkContent } from "@/lib/chunk-content";
 import { normalizeUsdc } from "@/lib/money";
 import type { ContentStatus, ContentType } from "@/lib/types";
@@ -17,6 +17,42 @@ async function ownOr404(id: string, userId: string) {
   const content = await getContentById(id);
   if (!content || content.creator_id !== userId) return null;
   return content;
+}
+
+/** GET — load the creator's own content (incl. body / image links) into the
+ *  editor for editing. Owner-only; mirrors the ownOr404 guard. */
+export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+  try {
+    const actor = await resolveActingUser();
+    const { id } = await ctx.params;
+    const content = await ownOr404(id, actor.user.id);
+    if (!content) return Response.json({ error: "not_found" }, { status: 404 });
+
+    // Picture posts store each image URL as a chunk's text (caption alongside);
+    // hand those back as an ordered {url, caption}[] so the editor can repopulate.
+    let images: Array<{ url: string; caption: string }> | undefined;
+    if (content.content_type === "picture") {
+      const chunks = await getChunks(content.id);
+      images = chunks.map((c) => ({ url: c.image_url ?? c.text, caption: c.caption ?? "" }));
+    }
+
+    return Response.json({
+      content: {
+        id: content.id,
+        title: content.title,
+        slug: content.slug,
+        summary: content.summary,
+        tags: content.tags,
+        content_type: content.content_type,
+        price_per_block: content.price_per_block,
+        status: content.status,
+        body: content.body,
+      },
+      images,
+    });
+  } catch (e) {
+    return errorResponse(e);
+  }
 }
 
 /** PATCH — edit metadata / price / status, optionally re-chunk on body change. */
