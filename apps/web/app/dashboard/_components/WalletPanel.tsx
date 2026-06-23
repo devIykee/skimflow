@@ -4,7 +4,6 @@ import { useCallback, useEffect, useState } from "react";
 import { useToast } from "@/components/Toaster";
 import { executeChallenge } from "@/lib/useEmbeddedWallet";
 import { formatUsdc } from "@/lib/money";
-import PayoutWallet from "@/components/PayoutWallet";
 
 const explorer = process.env.NEXT_PUBLIC_ARC_EXPLORER_URL || "https://testnet.arcscan.app";
 
@@ -110,8 +109,8 @@ export default function WalletPanel({ impersonating }: { impersonating: boolean 
         />
       )}
 
-      {/* Payout wallet management (item 4: keep both + toggle) */}
-      {!impersonating && <PayoutWallet />}
+      {/* Payout-wallet / Connect-wallet management lives in Profile Settings only
+          — it doesn't belong on the Wallet page. */}
 
       {/* Transaction history */}
       <div className="card">

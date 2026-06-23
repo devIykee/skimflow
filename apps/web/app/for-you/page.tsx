@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { formatUsdc } from "@/lib/money";
+import ShareAgentButton from "@/components/ShareAgentButton";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // "For You" — a social feed of pay-per-block content. Tabs strictly separate the
@@ -299,6 +300,9 @@ export default function ForYouPage() {
                 </span>
               </div>
               <div className="flex items-center gap-2 font-data-mono text-[12px]">
+                {c.contentType === "agent-skills" && (
+                  <ShareAgentButton slug={c.slug} title={c.title} pricePerBlock={c.pricePerBlock} variant="card" />
+                )}
                 {typeof c.blockCount === "number" && c.blockCount > 0 && (
                   <span className="text-outline">{c.blockCount} blocks</span>
                 )}

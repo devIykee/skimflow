@@ -84,9 +84,13 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ slug: stri
     if (content.status !== "published") return Response.json({ error: "content_not_available" }, { status: 404 });
 
     const chunk = await getChunk(content.id, blockIndex);
-    if (!chunk) return Response.json({ error: "block_not_found" }, { status: 404 });
-    if (chunk.is_free && !wantsWhole) {
-      return Response.json({ free: true, blockIndex, text: chunk.text });
+    // A single-block request must point at a real chunk. A whole-piece request
+    // carries no block (it defaults to 0), and agent-skills start at block 1 — so
+    // block 0 never exists there. Don't 404 the whole-piece flow on that absence;
+    // it resolves every payable chunk further down instead.
+    if (!wantsWhole) {
+      if (!chunk) return Response.json({ error: "block_not_found" }, { status: 404 });
+      if (chunk.is_free) return Response.json({ free: true, blockIndex, text: chunk.text });
     }
 
     // Creators (and admins) read their own work in full, free — they already own
@@ -100,7 +104,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ slug: stri
         const vu = await getUserById(viewer.user.id);
         isOwner = vu?.role === "admin";
       }
-      if (isOwner) return Response.json({ free: true, owner: true, blockIndex, text: chunk.text });
+      if (isOwner && chunk) return Response.json({ free: true, owner: true, blockIndex, text: chunk.text });
     }
 
     const creator = await getUserById(content.creator_id);
@@ -168,7 +172,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ slug: stri
       // Idempotent on the payment token (tx hash or burn-intent salt).
       const existing = await getLedgerByToken(token);
       if (existing) {
-        return Response.json({ paid: true, alreadyUnlocked: true, blockIndex, text: chunk.text, txHash });
+        return Response.json({ paid: true, alreadyUnlocked: true, blockIndex, text: chunk!.text, txHash });
       }
       await insertLedger({
         contentId: content.id,
@@ -211,7 +215,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ slug: stri
         amount,
         amountDisplay: toDecimal(amount),
         txHash,
-        text: chunk.text,
+        text: chunk!.text,
       });
     };
 
@@ -332,7 +336,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ slug: stri
       // Idempotency: the burn-intent salt is the payment token.
       const salt = burnIntent.spec.salt;
       const dup = await getLedgerByToken(salt);
-      if (dup) return Response.json({ paid: true, alreadyUnlocked: true, blockIndex, text: chunk.text, txHash: salt });
+      if (dup) return Response.json({ paid: true, alreadyUnlocked: true, blockIndex, text: chunk!.text, txHash: salt });
 
       // ── §3 Optimistic unlock (non-final blocks; flag on) ────────────────────
       // Render N now, settle in the background. The N+1 request carries
@@ -448,7 +452,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ slug: stri
           });
         }
 
-        return Response.json({ paid: true, optimistic: true, blocked: false, blockIndex, text: chunk.text, token: salt });
+        return Response.json({ paid: true, optimistic: true, blocked: false, blockIndex, text: chunk!.text, token: salt });
       }
 
       // Atomically charge the cap (the concurrency guard for double-spends).

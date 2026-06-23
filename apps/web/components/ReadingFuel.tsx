@@ -18,18 +18,29 @@ interface Props {
   pricePerBlock?: string;
   /** Open the setup modal to add funds / raise the cap. */
   onTopUp?: () => void;
+  /**
+   * "pill" (default) renders the full battery pill inline. "inline" renders just
+   * a compact `N%` number that sits beside a page/progress indicator; tapping it
+   * pops the full pill as a floating overlay (dismiss on outside tap / timeout).
+   */
+  variant?: "pill" | "inline";
 }
 
 /**
  * "Reading Fuel" gauge — the consumer-friendly face of the silent-spend
- * allowance. Shows a battery bar + percentage instead of a raw USDC balance;
- * click it to reveal the exact amount. Polls the balance endpoint, refreshes on
- * a payment event, warns once when fuel runs low, and offers to add funds / end
- * the session. Crypto stays hidden behind the percentage.
+ * allowance. Shows a battery bar + percentage instead of a raw USDC balance.
+ * Polls the balance endpoint, refreshes on a payment event, warns once when fuel
+ * runs low, and offers to add funds / end the session.
+ *
+ * Two presentations from one source of truth so every reader behaves the same:
+ *   • pill   — the full battery pill (used where there's room).
+ *   • inline — a compact `N%` beside the page number; tap to reveal the pill in a
+ *              floating popover. Keeps the mobile reader header uncluttered.
  */
-export default function ReadingFuel({ pricePerBlock, onTopUp }: Props) {
+export default function ReadingFuel({ pricePerBlock, onTopUp, variant = "pill" }: Props) {
   const [state, setState] = useState<BalanceState>({ active: false });
   const [revealed, setRevealed] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const toast = useToast();
   const warnedRef = useRef(false);
 
@@ -63,6 +74,13 @@ export default function ReadingFuel({ pricePerBlock, onTopUp }: Props) {
     };
   }, [refresh]);
 
+  // Auto-dismiss the floating pill a few seconds after it opens.
+  useEffect(() => {
+    if (!expanded) return;
+    const t = setTimeout(() => setExpanded(false), 4000);
+    return () => clearTimeout(t);
+  }, [expanded]);
+
   async function revoke() {
     try {
       await fetch("/api/pay-session/revoke", { method: "POST" });
@@ -70,6 +88,7 @@ export default function ReadingFuel({ pricePerBlock, onTopUp }: Props) {
       // the reader can silently resume against the still-funded Gateway balance
       // on the next "Read on" — without depositing again.
       setState({ active: false });
+      setExpanded(false);
       toast("info", "Reading session ended. Your balance stays put if you read on again.");
       window.dispatchEvent(new Event(PAY_SESSION_EVENT));
     } catch {
@@ -91,7 +110,8 @@ export default function ReadingFuel({ pricePerBlock, onTopUp }: Props) {
     ? "border-primary/40 bg-primary/5 text-primary"
     : "border-secondary/30 bg-secondary/5 text-secondary";
 
-  return (
+  // ── The full battery pill (shared by both variants) ───────────────────────
+  const pill = (
     <div className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 font-data-mono text-[12px] ${tone}`}>
       {/* Battery gauge — click to reveal the exact USDC behind the percentage. */}
       <button
@@ -120,5 +140,30 @@ export default function ReadingFuel({ pricePerBlock, onTopUp }: Props) {
         ✕
       </button>
     </div>
+  );
+
+  if (variant === "pill") return pill;
+
+  // ── Inline variant: a compact `N%` that pops the pill on tap ──────────────
+  return (
+    <span className="relative inline-flex items-center">
+      <button
+        onClick={() => setExpanded((e) => !e)}
+        className={`inline-flex items-center gap-0.5 font-data-mono text-[12px] ${insufficient ? "text-primary" : "text-secondary"}`}
+        title="Reading fuel — tap for details"
+        aria-expanded={expanded}
+      >
+        <span className="material-symbols-outlined text-[13px]">bolt</span>
+        {pct}%
+      </button>
+      {expanded && (
+        <>
+          {/* Tap-outside catcher. */}
+          <span className="fixed inset-0 z-[60]" onClick={() => setExpanded(false)} aria-hidden />
+          {/* Floating pill, anchored to the number. */}
+          <span className="absolute right-0 top-full z-[61] mt-2 whitespace-nowrap">{pill}</span>
+        </>
+      )}
+    </span>
   );
 }

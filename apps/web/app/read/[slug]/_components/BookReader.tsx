@@ -70,6 +70,11 @@ export default function BookReader({ slug, title, creatorHandle, pricePerBlock, 
   const effectiveWallet = (address ?? embeddedAddr ?? undefined) as Address | undefined;
   const walletKind: "external" | "embedded" | null = address ? "external" : embeddedAddr ? "embedded" : null;
   const hasWallet = !!effectiveWallet;
+  // Embedded-wallet status loads async (null until the GET resolves). During that
+  // window we must NOT treat the reader as wallet-less — doing so wrongly popped
+  // the "connect a wallet" gate on a page turn for users who already had an
+  // embedded wallet. Mirror ChunkReader: only gate once we're sure there's none.
+  const walletLoading = !address && embedded.status === null;
   const canCreateEmbedded = embedded.status?.enabled === true && embedded.status?.isAdmin === false;
 
   const touchStartX = useRef<number | null>(null);
@@ -234,6 +239,11 @@ export default function BookReader({ slug, title, creatorHandle, pricePerBlock, 
   /** Pay for a single page silently, then turn to it. */
   async function payPage(blockIndex: number, opts?: { sessionReady?: boolean }) {
     if (!hasWallet) {
+      // Still resolving whether they have an embedded wallet — don't gate yet.
+      if (walletLoading) {
+        toast("info", "Checking your wallet…");
+        return;
+      }
       toast("warning", "Create your free wallet (or connect one) to keep reading.");
       return;
     }
@@ -323,6 +333,10 @@ export default function BookReader({ slug, title, creatorHandle, pricePerBlock, 
   /** Whole-book purchase — unlock every page in one silent payment. */
   async function unlockWhole(opts?: { sessionReady?: boolean }) {
     if (!hasWallet) {
+      if (walletLoading) {
+        toast("info", "Checking your wallet…");
+        return;
+      }
       toast("warning", "Create your free wallet (or connect one) to unlock the book.");
       return;
     }
@@ -457,7 +471,8 @@ export default function BookReader({ slug, title, creatorHandle, pricePerBlock, 
               bookmark
             </span>
           </button>
-          {hasWallet && !isOwner && <ReadingFuel pricePerBlock={pricePerBlock} onTopUp={() => setShowSetup(true)} />}
+          {/* Reading fuel moved to a compact % beside "Page X of N" in the bottom
+              chrome, so the immersive top bar stays clean. */}
         </div>
       </div>
 
@@ -503,8 +518,10 @@ export default function BookReader({ slug, title, creatorHandle, pricePerBlock, 
           </div>
         )}
 
-        {/* No-wallet gate (shown over the surface when the next page needs paying). */}
-        {!hasWallet && current + 1 < pages.length && !isPageUnlocked(pages[current + 1]) && chromeVisible && (
+        {/* No-wallet gate (shown over the surface when the next page needs paying).
+            Suppressed while embedded-wallet status is still loading and for owners
+            (who read free), so it only appears for genuinely wallet-less readers. */}
+        {!hasWallet && !walletLoading && !isOwner && current + 1 < pages.length && !isPageUnlocked(pages[current + 1]) && chromeVisible && (
           <div className="absolute inset-x-0 bottom-24 z-30 mx-auto flex max-w-sm flex-col items-center gap-2 rounded-xl border border-outline-variant bg-surface-container-high p-4 text-center shadow-lg">
             <p className="font-body-sm text-[13px] text-on-surface-variant">Create your free wallet to keep reading.</p>
             {canCreateEmbedded && (
@@ -544,8 +561,14 @@ export default function BookReader({ slug, title, creatorHandle, pricePerBlock, 
               {bookmarks.length > 0 ? bookmarks.length : ""} Bookmarks
             </button>
           </div>
-          <span className="font-data-mono">
+          <span className="flex items-center gap-1.5 font-data-mono">
             Page {current + 1} of {pages.length}
+            {hasWallet && !isOwner && (
+              <>
+                <span aria-hidden>·</span>
+                <ReadingFuel variant="inline" pricePerBlock={pricePerBlock} onTopUp={() => setShowSetup(true)} />
+              </>
+            )}
           </span>
           <span className="hidden text-outline sm:inline">by @{creatorHandle ?? "unknown"}</span>
         </div>

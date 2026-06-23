@@ -17,6 +17,7 @@ import ReadingFuel, { PAY_SESSION_EVENT } from "@/components/ReadingFuel";
 import RichText from "@/components/RichText";
 import ShareButton from "@/components/ShareButton";
 import ReportButton from "@/components/ReportButton";
+import ShareAgentButton from "@/components/ShareAgentButton";
 
 const ARC_CHAIN_ID = Number(process.env.NEXT_PUBLIC_ARC_CHAIN_ID ?? "5042002");
 
@@ -637,7 +638,8 @@ export default function ChunkReader(props: Props) {
         </Link>
         {/* Compact toolbar: the Reading-Fuel pill grouped with icon-only actions. */}
         <div className="flex items-center gap-1">
-          {hasWallet && !isOwner && <ReadingFuel pricePerBlock={pricePerBlock} onTopUp={() => setShowSetup(true)} />}
+          {/* Reading fuel now lives inline beside the progress indicator below as a
+              compact %, keeping the header uncluttered (esp. on mobile). */}
           <ShareButton slug={slug} title={title} iconOnly />
           <ReportButton contentSlug={slug} iconOnly />
         </div>
@@ -656,14 +658,21 @@ export default function ChunkReader(props: Props) {
         {agentUrl && (
           <a href={agentUrl} className="font-data-mono text-[11px] text-primary" title="Agent endpoint">agent-skills.md</a>
         )}
+        {agentUrl && <ShareAgentButton slug={slug} title={title} pricePerBlock={pricePerBlock} variant="detail" />}
       </div>
       <h1 className="font-display-lg text-display-lg-mobile">{title}</h1>
       <p className="mb-2 font-body-md text-on-surface-variant">by @{creatorHandle ?? "unknown"}</p>
 
-      {/* Progress */}
-      <div className="mb-6 flex items-center gap-3 font-body-sm text-on-surface-variant">
+      {/* Progress — the reading-fuel % sits inline here (tap to expand the pill). */}
+      <div className="mb-6 flex items-center gap-2 font-body-sm text-on-surface-variant">
         <span>{unlockedPayable} of {payable.length} {isPicture ? "images" : "blocks"} unlocked</span>
         {sessionActive && <span className="text-secondary">· one-tap on</span>}
+        {hasWallet && !isOwner && (
+          <span className="flex items-center gap-1">
+            <span aria-hidden>·</span>
+            <ReadingFuel variant="inline" pricePerBlock={pricePerBlock} onTopUp={() => setShowSetup(true)} />
+          </span>
+        )}
       </div>
 
       {summary && <p className="mb-6 border-l-4 border-outline-variant pl-4 font-body-lg text-on-surface-variant">{summary}</p>}
