@@ -50,6 +50,8 @@ export default function CreateBookPage() {
   const [price, setPrice] = useState("0.05");
   const [chapters, setChapters] = useState<ChapterDraft[]>([{ title: "Chapter 1", body: "" }]);
   const [busy, setBusy] = useState(false);
+  // When set, we're editing an existing book (PATCH) rather than creating one.
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   // Autosave plumbing. `restorable` holds a found-on-load snapshot awaiting the
   // user's restore/discard decision; `ready` gates the autosave writer so it
@@ -76,8 +78,37 @@ export default function CreateBookPage() {
     try { localStorage.removeItem(AUTOSAVE_KEY); } catch { /* ignore */ }
   }
 
-  // On load, surface any local autosave from a prior session (don't auto-apply).
+  // On load: if editing an existing book (?edit=<id>), fetch and populate it and
+  // skip the new-book autosave entirely. Otherwise surface any local autosave.
   useEffect(() => {
+    const editId = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("edit") : null;
+    if (editId) {
+      (async () => {
+        try {
+          const r = await fetch(`/api/creator/content/${editId}`, { credentials: "include" });
+          const d = await r.json();
+          if (r.ok && d.content?.content_type === "book") {
+            setEditingId(editId);
+            setTitle(d.content.title ?? "");
+            setCoverImageUrl(d.content.cover_image_url ?? "");
+            setDescription(d.content.summary ?? "");
+            setPrice(String(d.content.price_per_block ?? "0.05"));
+            setChapters(
+              Array.isArray(d.chapters) && d.chapters.length
+                ? d.chapters.map((c: { title?: string; body?: string }) => ({ title: c.title ?? "Untitled", body: c.body ?? "" }))
+                : [{ title: "Chapter 1", body: "" }]
+            );
+          } else {
+            toast("error", d.message ?? d.error ?? "Couldn't load that book to edit.");
+          }
+        } catch {
+          toast("error", "Couldn't load that book to edit.");
+        } finally {
+          setReady(true); // autosave writer is gated on !editingId below
+        }
+      })();
+      return;
+    }
     try {
       const raw = localStorage.getItem(AUTOSAVE_KEY);
       if (raw) {
@@ -94,9 +125,9 @@ export default function CreateBookPage() {
     setReady(true);
   }, []);
 
-  // Debounced local-only autosave. Fires a little after the user stops typing.
+  // Debounced local-only autosave (new books only; edits save server-side).
   useEffect(() => {
-    if (!ready) return;
+    if (!ready || editingId) return;
     const id = setTimeout(() => {
       try {
         const snap: BookDraftSnapshot = {
@@ -115,7 +146,7 @@ export default function CreateBookPage() {
       }
     }, 1200);
     return () => clearTimeout(id);
-  }, [ready, title, coverImageUrl, description, price, chapters]);
+  }, [ready, editingId, title, coverImageUrl, description, price, chapters]);
 
   function restoreDraft() {
     if (!restorable) return;
@@ -159,20 +190,55 @@ export default function CreateBookPage() {
     }
     setBusy(true);
     try {
-      const res = await fetch("/api/creator/content", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          contentType: "book",
-          title: title.trim(),
-          coverImageUrl: coverImageUrl.trim() || undefined,
-          summary: description.trim(),
-          pricePerBlock: price,
-          status,
-          chapters: chapters.map((c) => ({ title: c.title.trim() || "Untitled", body: c.body })),
-        }),
-      });
+      const chapterPayload = chapters.map((c) => ({ title: c.title.trim() || "Untitled", body: c.body }));
+      // Editing an existing book → PATCH it (updateBook replaces chapters/pages);
+      // otherwise create a new one.
+      const res = editingId
+        ? await fetch(`/api/creator/content/${editingId}`, {
+            method: "PATCH",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              title: title.trim(),
+              coverImageUrl: coverImageUrl.trim() || null,
+              summary: description.trim(),
+              pricePerBlock: price,
+              status,
+              chapters: chapterPayload,
+            }),
+          })
+        : await fetch("/api/creator/content", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              contentType: "book",
+              title: title.trim(),
+              coverImageUrl: coverImageUrl.trim() || undefined,
+              summary: description.trim(),
+              pricePerBlock: price,
+              status,
+              chapters: chapterPayload,
+            }),
+          });
       const data = await res.json();
+      if (res.status === 409 && data.needsConfirm) {
+        if (!confirm(`${data.paid} reader(s) have paid for this book. Editing it is recorded for review. Save anyway?`)) {
+          setBusy(false);
+          return;
+        }
+        const retry = await fetch(`/api/creator/content/${editingId}?confirm=1`, {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ title: title.trim(), coverImageUrl: coverImageUrl.trim() || null, summary: description.trim(), pricePerBlock: price, status, chapters: chapterPayload }),
+        });
+        if (!retry.ok) {
+          const rd = await retry.json().catch(() => ({}));
+          throw new Error(rd.message ?? rd.error ?? "Couldn't save the book.");
+        }
+        clearAutosave();
+        toast("success", status === "published" ? "Book updated and live." : "Changes saved.");
+        router.push("/dashboard");
+        return;
+      }
       if (!res.ok) throw new Error(data.message ?? data.error ?? "Couldn't save the book.");
       // Backend is now the source of truth — drop the local crash-protection copy.
       clearAutosave();
@@ -195,7 +261,7 @@ export default function CreateBookPage() {
       <Link href="/dashboard" className="inline-flex items-center gap-1 font-label-caps text-label-caps text-outline hover:text-primary">
         ← Dashboard
       </Link>
-      <h1 className="mb-1 mt-3 font-display-lg text-display-lg-mobile">New book</h1>
+      <h1 className="mb-1 mt-3 font-display-lg text-display-lg-mobile">{editingId ? "Edit book" : "New book"}</h1>
       <p className="mb-8 font-body-md text-on-surface-variant">
         Serialized, pay-as-you-read long-form. Readers turn the page in an immersive viewer and pay per page silently.
       </p>

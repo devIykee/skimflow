@@ -508,7 +508,10 @@ export default function BookReader({ slug, title, creatorHandle, pricePerBlock, 
               <div key={p.id} className="h-full w-full shrink-0 overflow-y-auto">
                 {/* Extra bottom padding (plus safe-area) so the last lines clear
                     the bottom chrome and never fall under the screen edge. */}
-                <div className="mx-auto max-w-2xl px-6 pt-20 pb-[max(9rem,calc(env(safe-area-inset-bottom)+8rem))] md:pt-24 md:pb-44">
+                <div
+                  className="mx-auto max-w-2xl px-6 pt-20 pb-40 md:pt-24 md:pb-48"
+                  style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 10rem)" }}
+                >
                   {text != null ? (
                     <RichText source={text} />
                   ) : (

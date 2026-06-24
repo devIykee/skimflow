@@ -10,13 +10,19 @@
  *
  * Hand-written (no Workbox in the project).
  */
-const CACHE_V1 = "skimflow-cache-v1";
-const PRECACHE = ["/", "/icon.svg", "/logo.svg", "/manifest.webmanifest"];
+const CACHE = "skimflow-cache-v2";
+const PRECACHE = ["/", "/offline", "/icon.svg", "/logo.svg", "/manifest.webmanifest"];
 
 // ── Lifecycle ────────────────────────────────────────────────────────────────
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches.open(CACHE_V1).then((cache) => cache.addAll(PRECACHE)).then(() => self.skipWaiting())
+    caches.open(CACHE).then(async (cache) => {
+      // Resilient: cache each URL independently so one failure (e.g. a 404 or a
+      // transient hiccup) can't abort the whole install and leave us with no
+      // offline cache at all.
+      await Promise.allSettled(PRECACHE.map((url) => cache.add(new Request(url, { cache: "reload" }))));
+      await self.skipWaiting();
+    })
   );
 });
 
@@ -24,7 +30,7 @@ self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches
       .keys()
-      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE_V1).map((k) => caches.delete(k))))
+      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
       .then(() => self.clients.claim())
   );
 });
@@ -35,7 +41,7 @@ async function cacheFirst(req) {
   if (cached) return cached;
   const res = await fetch(req);
   if (res && res.ok) {
-    const cache = await caches.open(CACHE_V1);
+    const cache = await caches.open(CACHE);
     cache.put(req, res.clone());
   }
   return res;
@@ -45,7 +51,7 @@ async function networkFirst(req, fallbackUrl) {
   try {
     const res = await fetch(req);
     if (res && res.ok) {
-      const cache = await caches.open(CACHE_V1);
+      const cache = await caches.open(CACHE);
       cache.put(req, res.clone());
     }
     return res;
@@ -85,10 +91,31 @@ self.addEventListener("fetch", (event) => {
   }
 
   if (req.mode === "navigate") {
-    event.respondWith(networkFirst(req, "/"));
+    event.respondWith(handleNavigation(req));
     return;
   }
 });
+
+// Navigations: try the network, then the exact cached page, then the home shell,
+// then the guaranteed-static offline page — so a navigation ALWAYS resolves to
+// something rather than the browser's dinosaur.
+async function handleNavigation(req) {
+  try {
+    const res = await fetch(req);
+    if (res && res.ok) {
+      const cache = await caches.open(CACHE);
+      cache.put(req, res.clone());
+    }
+    return res;
+  } catch {
+    return (
+      (await caches.match(req)) ||
+      (await caches.match("/")) ||
+      (await caches.match("/offline")) ||
+      new Response("You are offline.", { status: 503, headers: { "Content-Type": "text/plain" } })
+    );
+  }
+}
 
 // ── Background Sync: replay queued offline writes ────────────────────────────
 self.addEventListener("sync", (event) => {

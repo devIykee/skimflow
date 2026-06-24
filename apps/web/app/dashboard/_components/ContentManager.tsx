@@ -627,7 +627,10 @@ export default function ContentManager({ impersonating }: { impersonating: boole
                   <td>{formatUsdc(c.price_per_block)} USDC</td>
                   <td>{c.status}</td>
                   <td className="flex gap-1 py-2">
-                    {c.content_type !== "book" && (
+                    {c.content_type === "book" ? (
+                      // Books edit in the dedicated chapter builder.
+                      <Link href={`/dashboard/create-book?edit=${c.id}`} className="btn-outline px-2 py-1 text-[11px]">Edit</Link>
+                    ) : (
                       <button disabled={disabled || busy} onClick={() => startEdit(c.id)} className="btn-outline px-2 py-1 text-[11px]">Edit</button>
                     )}
                     <button disabled={disabled} onClick={() => toggle(c.id, c.status)} className="btn-outline px-2 py-1 text-[11px]">{c.status === "published" ? "Unpublish" : "Publish"}</button>

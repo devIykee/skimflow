@@ -1,7 +1,16 @@
 import { NextRequest } from "next/server";
 import { assertNotImpersonating, errorResponse, resolveActingUser } from "@/lib/session";
-import { deleteContent, getContentById, getChunks, updateContent, countPaidReaders, createReport } from "@/lib/store";
-import { chunkContent } from "@/lib/chunk-content";
+import {
+  deleteContent,
+  getContentById,
+  getChunks,
+  getChapters,
+  updateContent,
+  updateBook,
+  countPaidReaders,
+  createReport,
+} from "@/lib/store";
+import { chunkContent, splitPages } from "@/lib/chunk-content";
 import { normalizeUsdc } from "@/lib/money";
 import type { ContentStatus, ContentType } from "@/lib/types";
 
@@ -36,6 +45,21 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
       images = chunks.map((c) => ({ url: c.image_url ?? c.text, caption: c.caption ?? "" }));
     }
 
+    // Books: reconstruct the chapter-builder bodies — for each chapter, join its
+    // pages back with a `---` separator so the editor round-trips cleanly.
+    let chapters: Array<{ title: string; body: string }> | undefined;
+    if (content.content_type === "book") {
+      const [chapRows, chunks] = await Promise.all([getChapters(content.id), getChunks(content.id)]);
+      chapters = chapRows.map((ch) => ({
+        title: ch.title,
+        body: chunks
+          .filter((c) => c.chapter_id === ch.id)
+          .sort((a, b) => a.block_index - b.block_index)
+          .map((c) => c.text)
+          .join("\n\n---\n\n"),
+      }));
+    }
+
     return Response.json({
       content: {
         id: content.id,
@@ -47,8 +71,10 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
         price_per_block: content.price_per_block,
         status: content.status,
         body: content.body,
+        cover_image_url: content.cover_image_url,
       },
       images,
+      chapters,
     });
   } catch (e) {
     return errorResponse(e);
@@ -71,6 +97,9 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
       pricePerBlock?: string | number;
       body?: string;
       status?: ContentStatus;
+      // Book edits carry the cover + the chapter-builder chapters.
+      coverImageUrl?: string | null;
+      chapters?: Array<{ title?: string; body?: string }>;
     };
 
     // Wallet gate (same as create): can't move a draft to published without a
@@ -87,6 +116,44 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
           { status: 422 }
         );
       }
+    }
+
+    // ── Book edit: replace chapters/pages via updateBook (own §5d guard) ───────
+    if (content.content_type === "book" && Array.isArray(body.chapters)) {
+      const paid = await countPaidReaders(content.id);
+      if (paid >= LOCK_THRESHOLD) {
+        return Response.json(
+          { error: "locked_admin_only", message: `This book has ${paid} paid readers and can only be changed by an admin.` },
+          { status: 403 }
+        );
+      }
+      if (paid > 0 && req.nextUrl.searchParams.get("confirm") !== "1") {
+        return Response.json(
+          { error: "needs_confirm", needsConfirm: true, paid, message: `${paid} reader(s) have paid for this book.` },
+          { status: 409 }
+        );
+      }
+      const chapters = body.chapters.map((ch) => ({
+        title: (ch.title ?? "").trim() || "Untitled",
+        pages: splitPages(ch.body ?? ""),
+      }));
+      const totalPages = chapters.reduce((n, ch) => n + ch.pages.length, 0);
+      if (totalPages < 2) {
+        return Response.json(
+          { error: "too_short", message: "A book needs at least 2 pages (the first is a free preview)." },
+          { status: 422 }
+        );
+      }
+      const updated = await updateBook(id, {
+        title: (body.title ?? content.title).trim(),
+        description: body.summary ?? content.summary ?? "",
+        tags: body.tags ?? content.tags ?? "",
+        pricePerBlock: body.pricePerBlock != null ? normalizeUsdc(body.pricePerBlock) : content.price_per_block,
+        coverImageUrl: body.coverImageUrl !== undefined ? body.coverImageUrl : content.cover_image_url,
+        status: body.status ?? content.status,
+        chapters,
+      });
+      return Response.json({ ok: true, content: updated });
     }
 
     // Re-chunking replaces the stored chunks — a substantive edit. Guard it the

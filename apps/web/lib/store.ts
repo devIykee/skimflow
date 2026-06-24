@@ -489,6 +489,63 @@ export async function createBook(input: CreateBookInput): Promise<Content> {
   });
 }
 
+/**
+ * Update a book in place: refresh the content row and REPLACE its chapters +
+ * pages (delete then re-insert) so an edit can add/remove/reorder pages freely.
+ * Deleting chapters cascades their chunks (chunks.chapter_id ON DELETE CASCADE).
+ * Atomic. block_count is recomputed (page 0 stays the free preview).
+ */
+export async function updateBook(
+  id: string,
+  input: Omit<CreateBookInput, "creatorId" | "slug">
+): Promise<Content> {
+  return tx(async (client) => {
+    const totalPages = input.chapters.reduce((n, ch) => n + ch.pages.length, 0);
+    const res = await client.query<Content>(
+      `UPDATE content SET
+         title = $2, summary = $3, tags = $4, price_per_block = $5,
+         cover_image_url = $6, status = $7, block_count = $8,
+         published_at = COALESCE(published_at, $9), updated_at = NOW()
+       WHERE id = $1 AND content_type = 'book'
+       RETURNING *`,
+      [
+        id,
+        input.title,
+        input.description ?? "",
+        input.tags ?? "",
+        input.pricePerBlock,
+        input.coverImageUrl ?? null,
+        input.status ?? "draft",
+        Math.max(0, totalPages - 1),
+        input.status === "published" ? new Date() : null,
+      ]
+    );
+    const content = res.rows[0];
+    if (!content) throw new Error("book_not_found");
+
+    // Replace chapters (cascades chunks) then re-insert from scratch.
+    await client.query(`DELETE FROM chapters WHERE content_id = $1`, [id]);
+    let blockIndex = 0;
+    for (let ci = 0; ci < input.chapters.length; ci++) {
+      const ch = input.chapters[ci];
+      const chapterRow = await client.query<{ id: string }>(
+        `INSERT INTO chapters (content_id, chapter_index, title) VALUES ($1,$2,$3) RETURNING id`,
+        [id, ci, ch.title]
+      );
+      const chapterId = chapterRow.rows[0].id;
+      for (const page of ch.pages) {
+        await client.query(
+          `INSERT INTO chunks (content_id, block_index, text, is_free, chapter_id)
+           VALUES ($1,$2,$3,$4,$5)`,
+          [id, blockIndex, page, blockIndex === 0, chapterId]
+        );
+        blockIndex++;
+      }
+    }
+    return content;
+  });
+}
+
 /** Ordered chapters of a book, by chapter_index. */
 export function getChapters(contentId: string): Promise<Chapter[]> {
   return query<Chapter>(
