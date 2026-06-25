@@ -134,8 +134,8 @@ fi
 # dead IPv6 route → OAuth "fetch failed" on hosts like WSL2). See the file's
 # header. Disable with UNDICI_FORCE_IPV4=0. Must be a preload, not Next's
 # instrumentation.ts (importing undici there breaks the edge bundle).
-PRELOAD="$PWD/apps/web/scripts/force-ipv4.mjs"
-DEV_NODE_OPTIONS="--import $PRELOAD${NODE_OPTIONS:+ $NODE_OPTIONS}"
+PRELOAD="$(node -p "require('url').pathToFileURL(require('path').resolve('apps/web/scripts/force-ipv4.mjs')).href")"
+DEV_NODE_OPTIONS="--import \"$PRELOAD\"${NODE_OPTIONS:+ $NODE_OPTIONS}"
 echo "▸ starting Next.js dev server…"
 ( cd apps/web && PORT="$PORT" NODE_OPTIONS="$DEV_NODE_OPTIONS" npm run dev ) >"$DEV_LOG" 2>&1 &
 DEV_PID=$!
