@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
-import { getUserById, listPublishedByCreator } from "@/lib/store";
-import { serializePosts, toPublicCreator } from "@/lib/creator-posts";
+import { listPublishedByCreator } from "@/lib/store";
+import { serializePosts, toPublicCreator, resolveCreator } from "@/lib/creator-posts";
 import { renderCreatorFeed } from "@/lib/rss";
 import { cacheGet, cacheSet } from "@/lib/cache";
 
@@ -26,12 +26,13 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ creatorId: 
     return new Response(cached, { headers: { "Content-Type": RSS_TYPE, "Cache-Control": "public, max-age=300", "X-Cache": "HIT" } });
   }
 
-  const creator = await getUserById(creatorId);
+  // creatorId may be a UUID or a handle/username — resolve either to a user.
+  const creator = await resolveCreator(creatorId);
   if (!creator || creator.role === "admin" || creator.suspended) {
     return new Response("Not found", { status: 404, headers: { "Content-Type": "text/plain; charset=utf-8" } });
   }
 
-  const rows = await listPublishedByCreator(creatorId, { limit });
+  const rows = await listPublishedByCreator(creator.id, { limit });
   const posts = await serializePosts(rows);
   const xml = renderCreatorFeed(toPublicCreator(creator), posts);
 

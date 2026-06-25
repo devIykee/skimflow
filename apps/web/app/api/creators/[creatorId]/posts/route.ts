@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
-import { getUserById, listPublishedByCreator, countPublishedByCreator } from "@/lib/store";
-import { serializePosts, toPublicCreator } from "@/lib/creator-posts";
+import { listPublishedByCreator, countPublishedByCreator } from "@/lib/store";
+import { serializePosts, toPublicCreator, resolveCreator } from "@/lib/creator-posts";
 import { cacheGet, cacheSet } from "@/lib/cache";
 
 export const runtime = "nodejs";
@@ -31,9 +31,10 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ creatorId: 
     return Response.json(cached, { headers: { "Cache-Control": "public, max-age=300", "X-Cache": "HIT" } });
   }
 
-  const creator = await getUserById(creatorId);
+  // creatorId may be a UUID or a handle/username — resolve either to a user.
+  const creator = await resolveCreator(creatorId);
   if (!creator || creator.role === "admin") {
-    // Admins aren't public creators; unknown id → 404.
+    // Admins aren't public creators; unknown id/handle → 404.
     return Response.json({ error: "creator_not_found" }, { status: 404 });
   }
   if (creator.suspended) {
@@ -41,8 +42,8 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ creatorId: 
   }
 
   const [rows, total] = await Promise.all([
-    listPublishedByCreator(creatorId, { limit, offset }),
-    countPublishedByCreator(creatorId),
+    listPublishedByCreator(creator.id, { limit, offset }),
+    countPublishedByCreator(creator.id),
   ]);
   const posts = await serializePosts(rows);
 
