@@ -602,6 +602,19 @@ export function getChunk(contentId: string, blockIndex: number): Promise<Chunk |
   );
 }
 
+/**
+ * The single FREE preview block for a content (is_free = TRUE). The SQL filter
+ * guarantees paid block text is never loaded — the safe source for public
+ * teasers (posts API + RSS). Returns undefined for content whose free block
+ * isn't stored (e.g. agent-skills, whose block 0 is generated, not in the DB).
+ */
+export function getFreeBlock(contentId: string): Promise<Chunk | undefined> {
+  return queryOne<Chunk>(
+    `SELECT * FROM chunks WHERE content_id = $1 AND is_free = TRUE ORDER BY block_index ASC LIMIT 1`,
+    [contentId]
+  );
+}
+
 /** Number of payable (non-free) chunks — used for whole-piece pricing. */
 export function payableChunkCount(contentId: string): Promise<number> {
   return queryOne<{ n: string }>(
@@ -640,6 +653,36 @@ export function listContentByCreator(creatorId: string): Promise<Content[]> {
     `SELECT * FROM content WHERE creator_id = $1 ORDER BY created_at DESC`,
     [creatorId]
   );
+}
+
+/**
+ * A creator's PUBLISHED content only, newest first — the data source for the
+ * public posts API + RSS feed. Suspended/draft are excluded. Paginated; returns
+ * one extra row beyond `limit` is NOT done here (callers pass limit+1 if they
+ * want a hasMore hint, or use a separate count).
+ */
+export function listPublishedByCreator(
+  creatorId: string,
+  opts: { limit?: number; offset?: number } = {}
+): Promise<Content[]> {
+  const limit = Math.min(Math.max(opts.limit ?? 20, 1), 100);
+  const offset = Math.max(opts.offset ?? 0, 0);
+  return query<Content>(
+    `SELECT * FROM content
+       WHERE creator_id = $1 AND status = 'published'
+       ORDER BY COALESCE(published_at, created_at) DESC
+       LIMIT $2 OFFSET $3`,
+    [creatorId, limit, offset]
+  );
+}
+
+/** Total count of a creator's published content (for pagination metadata). */
+export async function countPublishedByCreator(creatorId: string): Promise<number> {
+  const row = await queryOne<{ count: string }>(
+    `SELECT COUNT(*)::text AS count FROM content WHERE creator_id = $1 AND status = 'published'`,
+    [creatorId]
+  );
+  return Number(row?.count ?? 0);
 }
 
 export interface MarketplaceFilters {

@@ -38,6 +38,13 @@ export function corsPolicyFor(pathname: string): CorsPolicy | null {
     return { origin: APP_URL, methods: "GET, POST, DELETE, OPTIONS", headers: "Content-Type", credentials: true };
   }
 
+  // Public creator posts + RSS feed (PLURAL /api/creators/…). Must come BEFORE
+  // the credentialed /api/creator (singular) rule below, which would otherwise
+  // match the plural prefix and wrongly lock these public endpoints down.
+  if (pathname.startsWith("/api/creators/")) {
+    return { origin: "*", methods: "GET, OPTIONS", headers: "Content-Type", credentials: false };
+  }
+
   // Auth / creator / dashboard — locked to the app origin, credentials.
   if (
     pathname.startsWith("/api/auth") ||
