@@ -59,7 +59,7 @@ export interface PaySessionInfo {
 
 interface Props {
   mainWallet: Address;
-  /** "external" = wagmi wallet signs; "embedded" = Circle PIN challenges. */
+  /** "external" = wagmi wallet signs; "embedded" = dev-controlled wallet, signed server-side. */
   kind?: "external" | "embedded";
   /** Suggested cap (e.g. enough for the whole article). */
   suggestedCap?: number;
@@ -77,7 +77,7 @@ interface Props {
  * One-time setup for silent payments. The user chooses how much USDC to deposit
  * (the spend cap) and authorizes a local session key; afterwards chunks unlock
  * with no popup. External wallets do the Gateway approve/deposit/addDelegate via
- * wagmi; embedded (Circle) wallets do the same steps via PIN-approved challenges.
+ * wagmi; embedded (Circle dev-controlled) wallets do the same steps signed server-side.
  */
 export default function PaySetupModal({ mainWallet, kind = "external", suggestedCap = 5, isTopUp = false, onReady, onClose }: Props) {
   const [cap, setCap] = useState(String(suggestedCap));
@@ -249,7 +249,7 @@ export default function PaySetupModal({ mainWallet, kind = "external", suggested
       const account = getOrCreateSessionAccount(mainWallet);
 
       if (LIVE) {
-        toast("info", embedded ? "Quick one-time setup. Confirm each step with your PIN." : "Quick one-time setup. Confirm each step in your wallet.");
+        toast("info", embedded ? "Setting up your reading balance — no action needed." : "Quick one-time setup. Confirm each step in your wallet.");
         if (embedded) await runEmbeddedSetup(account.address, parseUnits(capValue, 6), capValue, forceDeposit);
         else await runExternalSetup(account.address, parseUnits(capValue, 6), forceDeposit);
       }
@@ -358,7 +358,7 @@ export default function PaySetupModal({ mainWallet, kind = "external", suggested
             <p className="mb-5 font-body-sm text-on-surface-variant">
               {LIVE
                 ? embedded
-                  ? "A quick one-time setup adds the amount you choose to your reading balance and turns on one-tap reading with your PIN. After that, each block unlocks instantly, no PIN per block."
+                  ? "A quick one-time setup adds the amount you choose to your reading balance and turns on one-tap reading automatically — no wallet popup, no PIN. After that, each block unlocks instantly."
                   : "A quick one-time setup adds the amount you choose to your reading balance and turns on one-tap reading. After that, each block unlocks instantly, no wallet popup per block."
                 : "Confirm once to turn on one-tap reading. After that, each block unlocks instantly, no wallet popup per block."}{" "}
               You stay in control: it stops at your cap, and you can end it anytime.

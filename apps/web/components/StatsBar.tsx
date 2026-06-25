@@ -40,7 +40,7 @@ export default function StatsBar() {
   const cells = [
     { label: "Paid to creators", value: s.toCreatorsDisplay },
     { label: "Nanopayments", value: s.payments.toLocaleString() },
-    { label: "Lines sold", value: s.linesSold.toLocaleString() },
+    { label: "Blocks sold", value: s.linesSold.toLocaleString() },
     { label: "By humans / agents", value: `${s.humanPayments} / ${s.agentPayments}` },
   ];
 
