@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useToast } from "@/components/Toaster";
 import { useEmbeddedWallet } from "@/lib/useEmbeddedWallet";
@@ -37,6 +37,37 @@ interface Preview {
     referrer: { amount: string; pct: number };
   };
   block0Template?: string;
+}
+
+/** Shared input styling so every field matches the app's surfaces + focus ring. */
+const inputClass =
+  "w-full rounded-lg border border-outline-variant bg-surface-container-low px-3.5 py-2.5 text-body-md text-on-surface placeholder:text-outline transition-colors focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20";
+
+const CONTENT_TYPES = [
+  { value: "article", label: "Article", icon: "article", unit: "chunk" },
+  { value: "picture", label: "Picture", icon: "image", unit: "image" },
+  { value: "agent-skills", label: "Agent Skill", icon: "smart_toy", unit: "skill block" },
+] as const;
+
+/** Labelled field wrapper: caps label, the control, and an optional hint line. */
+function Field({ label, hint, children }: { label: string; hint?: ReactNode; children: ReactNode }) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <label className="font-label-caps text-label-caps text-on-surface-variant">{label}</label>
+      {children}
+      {hint && <p className="font-body-sm text-[12px] text-outline">{hint}</p>}
+    </div>
+  );
+}
+
+/** One figure in the commission-split preview grid. */
+function SplitCell({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
+  return (
+    <div>
+      <div className="font-label-caps text-[10px] uppercase text-outline">{label}</div>
+      <div className={`font-data-mono text-[14px] ${highlight ? "font-semibold text-primary" : "text-on-surface"}`}>{value}</div>
+    </div>
+  );
 }
 
 export default function ContentManager({ impersonating }: { impersonating: boolean }) {
@@ -358,196 +389,307 @@ export default function ContentManager({ impersonating }: { impersonating: boole
   return (
     <div className="flex flex-col gap-6">
       {/* Editor */}
-      <div className="card">
-        <div className="mb-4 flex items-center justify-between gap-2">
-          <h2 className="font-headline-sm text-headline-sm">{editingId ? "Edit content" : "New content"}</h2>
+      <div className="card !p-0 overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center justify-between gap-2 border-b border-outline-variant px-5 py-4 md:px-6">
+          <div className="flex items-center gap-2.5">
+            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
+              <span className="material-symbols-outlined text-[20px]">{editingId ? "edit_document" : "post_add"}</span>
+            </span>
+            <div>
+              <h2 className="font-headline-sm text-[15px] font-semibold leading-tight">{editingId ? "Edit content" : "New content"}</h2>
+              <p className="font-body-sm text-[12px] text-on-surface-variant">
+                {editingId ? "Update your piece and re-publish." : "Write or paste a piece, price it per block, and publish."}
+              </p>
+            </div>
+          </div>
           {editingId && (
-            <button onClick={resetEditor} disabled={busy} className="font-label-caps text-label-caps text-outline hover:text-primary">
-              Cancel edit
+            <button onClick={resetEditor} disabled={busy} className="flex items-center gap-1 font-label-caps text-label-caps text-outline transition-colors hover:text-primary">
+              <span className="material-symbols-outlined text-[16px]">close</span>
+              Cancel
             </button>
           )}
         </div>
-        <div className="flex flex-col gap-3">
-          <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Title" className="rounded-lg border border-outline px-3 py-2 text-body-md" />
-          <div className="flex flex-wrap gap-3">
-            <select value={contentType} onChange={(e) => setContentType(e.target.value as "article" | "agent-skills" | "picture")} disabled={!!editingId} className="rounded-lg border border-outline px-3 py-2 text-body-sm disabled:opacity-60">
-              <option value="article">Article (chunked)</option>
-              <option value="picture">Picture Skimflow (per-image)</option>
-              <option value="agent-skills">Agent Skills (per-block)</option>
-            </select>
-            <div className="flex items-center gap-2">
-              <input value={price} onChange={(e) => setPrice(e.target.value)} className="w-28 rounded-lg border border-outline px-3 py-2 font-data-mono text-body-sm" />
-              <span className="font-body-sm text-on-surface-variant">
-                USDC per {contentType === "agent-skills" ? "skill block" : contentType === "picture" ? "image" : "chunk"}
-              </span>
-            </div>
+
+        {/* Body */}
+        <div className="flex flex-col gap-5 px-5 py-5 md:px-6">
+          {/* Format + price */}
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+            <Field label="Format">
+              <div className="inline-flex flex-wrap rounded-lg border border-outline-variant bg-surface-container-low p-1">
+                {CONTENT_TYPES.map((t) => {
+                  const active = contentType === t.value;
+                  return (
+                    <button
+                      key={t.value}
+                      type="button"
+                      disabled={!!editingId}
+                      onClick={() => setContentType(t.value)}
+                      className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 font-label-lg text-label-lg transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${active ? "bg-surface text-primary shadow-sm" : "text-on-surface-variant hover:text-on-surface"}`}
+                    >
+                      <span className="material-symbols-outlined text-[16px]">{t.icon}</span>
+                      {t.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </Field>
+            <Field label="Price">
+              <div className="flex items-center gap-2">
+                <div className="relative">
+                  <input
+                    value={price}
+                    onChange={(e) => setPrice(e.target.value)}
+                    inputMode="decimal"
+                    className={`${inputClass} w-32 pr-14 font-data-mono`}
+                  />
+                  <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 font-label-caps text-label-caps text-outline">USDC</span>
+                </div>
+                <span className="whitespace-nowrap font-body-sm text-[12px] text-on-surface-variant">
+                  per {CONTENT_TYPES.find((t) => t.value === contentType)?.unit}
+                </span>
+              </div>
+            </Field>
           </div>
-          {contentType === "article" && (
-            <p className="font-body-sm text-[12px] text-on-surface-variant">
-              Leave a blank line between sections to start a new chunk. Every chunk needs at least 6 lines and at most 400
-              words, and must end on a complete sentence (the last chunk is exempt from the line minimum). Or hit{" "}
-              <strong>Auto-chunk</strong> to group it for you.
-            </p>
-          )}
-          <input value={summary} onChange={(e) => setSummary(e.target.value)} placeholder="Summary (shown on the For You card + as the free intro)" className="rounded-lg border border-outline px-3 py-2 text-body-sm" />
-          <input value={tags} onChange={(e) => setTags(e.target.value)} placeholder="tags, comma, separated" className="rounded-lg border border-outline px-3 py-2 text-body-sm" />
+
+          <Field label="Title">
+            <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="A clear, compelling title" className={inputClass} />
+          </Field>
+
           {contentType === "picture" ? (
-            <PictureEditor
-              images={images}
-              imgUrl={imgUrl}
-              imgCaption={imgCaption}
-              imgChecking={imgChecking}
-              onUrl={setImgUrl}
-              onCaption={setImgCaption}
-              onAdd={addImage}
-              onRemove={removeImage}
-            />
+            <Field label="Images">
+              <PictureEditor
+                images={images}
+                imgUrl={imgUrl}
+                imgCaption={imgCaption}
+                imgChecking={imgChecking}
+                onUrl={setImgUrl}
+                onCaption={setImgCaption}
+                onAdd={addImage}
+                onRemove={removeImage}
+              />
+            </Field>
           ) : (
-            <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={12} placeholder="Write or paste your content (markdown supported)…" className="rounded-lg border border-outline px-3 py-2 font-data-mono text-[13px]" />
+            <Field
+              label="Content"
+              hint={
+                contentType === "article" ? (
+                  <>
+                    Leave a blank line between sections to start a new chunk. Each chunk needs 6–400 words and must end on a
+                    complete sentence (the last is exempt from the minimum). Or hit <strong>Auto-chunk</strong> to group it for you.
+                  </>
+                ) : (
+                  "Markdown supported. Each block becomes a separately-unlockable unit."
+                )
+              }
+            >
+              <textarea
+                value={body}
+                onChange={(e) => setBody(e.target.value)}
+                rows={14}
+                placeholder="Write or paste your content (markdown supported)…"
+                className={`${inputClass} resize-y font-data-mono text-[13px] leading-relaxed`}
+              />
+            </Field>
           )}
-        </div>
 
-        {/* Commission split preview */}
-        {preview?.split && (
-          <div className="mt-4 rounded-lg bg-surface-container-low p-4 font-data-mono text-[13px]">
-            <div className="mb-2 font-label-caps text-label-caps text-on-surface-variant">Commission split</div>
-            <div>Reader pays:&nbsp;&nbsp;&nbsp;&nbsp;{formatUsdc(preview.split.readerPays)} USDC per block</div>
-            <div>You receive:&nbsp;&nbsp;&nbsp;&nbsp;{preview.split.creator.amount} ({preview.split.creator.pct}%)</div>
-            <div>Referrer:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{preview.split.referrer.amount} ({preview.split.referrer.pct}%) ← only if referred</div>
-            <div>Platform:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{preview.split.platform.amount} ({preview.split.platform.pct}%)</div>
-            <div className="mt-2 text-on-surface-variant">{preview.payableBlocks} payable block(s)</div>
+          <div className="grid grid-cols-1 gap-4 border-t border-outline-variant pt-5 md:grid-cols-2">
+            <Field label="Summary" hint="Shown on the For You card and as the free intro.">
+              <input value={summary} onChange={(e) => setSummary(e.target.value)} placeholder="One or two sentences" className={inputClass} />
+            </Field>
+            <Field label="Tags" hint="Comma-separated, e.g. fiction, sci-fi, weekly.">
+              <input value={tags} onChange={(e) => setTags(e.target.value)} placeholder="tags, comma, separated" className={inputClass} />
+            </Field>
           </div>
-        )}
-
-        {/* Agent-skills block 0 helper */}
-        {contentType === "agent-skills" && preview?.block0Template && (
-          <details className="mt-4">
-            <summary className="cursor-pointer font-label-lg text-primary">Auto-generated free block 0 (agents see this). You don&apos;t write it</summary>
-            <pre className="mt-2 max-h-64 overflow-auto rounded-lg bg-[#0b0c10] p-4 font-data-mono text-[11px] text-[#e4e2dd]">{preview.block0Template}</pre>
-            <p className="mt-1 font-body-sm text-on-surface-variant">
-              How agents use this: they GET the agent endpoint, read this free block, pay per block via Circle Gateway, and retry with an <code>X-Payment-Token</code> header.
-            </p>
-          </details>
-        )}
-
-        {/* Publish is blocked while any chunk violates the limits (article only). */}
-        {contentType === "article" && preview?.hasErrors && (
-          <div className="mt-4 rounded-lg border border-error/40 bg-error/5 p-3 font-body-sm text-[13px] text-error">
-            Some chunks don&apos;t meet the limits. Fix the flagged chunks below or hit <strong>Auto-chunk</strong> before publishing.
-          </div>
-        )}
-
-        <div className="mt-4 flex flex-wrap gap-2">
-          {contentType === "article" && (
-            <button onClick={applyAutoChunk} disabled={!body.trim() || disabled} className="btn-outline px-5 py-2">Auto-chunk</button>
-          )}
-          {contentType !== "picture" && (
-            <button onClick={() => setShowChunks((s) => !s)} disabled={!preview} className="btn-outline px-5 py-2">Preview Chunks</button>
-          )}
-          <button onClick={() => publish("draft")} disabled={busy || disabled || !title || !hasContent} className="btn-outline px-5 py-2">{editingId ? "Save as draft" : "Save Draft"}</button>
-          <button
-            onClick={() => publish("published")}
-            disabled={
-              busy || disabled || !title || !hasContent ||
-              (contentType === "article" && !!preview?.hasErrors)
-            }
-            className="btn-primary px-6 py-2"
-          >
-            {editingId ? "Update" : "Publish to Feed"}
-          </button>
-        </div>
-
-        {/* Wallet gate: publish was saved as a draft because there's no payout wallet. */}
-        {walletGatedDraft && (
-          <div className="mt-4 rounded-lg border border-primary/30 bg-primary/5 p-4">
-            <div className="mb-1 flex items-center gap-2 font-label-lg text-primary">
-              <span className="material-symbols-outlined text-[18px]">account_balance_wallet</span>
-              Saved to drafts. A wallet is needed to publish
+          {/* Commission split preview */}
+          {preview?.split && (
+            <div className="rounded-xl border border-outline-variant bg-surface-container-low p-4">
+              <div className="mb-3 flex items-center gap-1.5 font-label-caps text-label-caps text-on-surface-variant">
+                <span className="material-symbols-outlined text-[16px]">pie_chart</span>
+                Commission split
+                <span className="ml-auto font-body-sm text-[11px] normal-case text-outline">{preview.payableBlocks} payable block(s)</span>
+              </div>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">
+                <SplitCell label="Reader pays" value={`${formatUsdc(preview.split.readerPays)} USDC`} />
+                <SplitCell label={`You · ${preview.split.creator.pct}%`} value={`${preview.split.creator.amount} USDC`} highlight />
+                <SplitCell label={`Referrer · ${preview.split.referrer.pct}%`} value={`${preview.split.referrer.amount} USDC`} />
+                <SplitCell label={`Platform · ${preview.split.platform.pct}%`} value={`${preview.split.platform.amount} USDC`} />
+              </div>
             </div>
-            <p className="mb-3 font-body-sm text-on-surface-variant">
-              You get paid in USDC when readers unlock your work, so publishing needs a payout wallet.
-              {embedded.status?.isAdmin
-                ? " Connect an external wallet from the account menu, then hit Publish on the draft below."
-                : " Create your free embedded wallet and we'll publish this draft right after."}
-            </p>
-            {!embedded.status?.isAdmin && (
-              <button onClick={createWalletAndPublish} disabled={busy} className="btn-primary px-5 py-2">
-                {busy ? "Setting up…" : "Create wallet & publish"}
-              </button>
+          )}
+
+          {/* Agent-skills block 0 helper */}
+          {contentType === "agent-skills" && preview?.block0Template && (
+            <details className="rounded-xl border border-outline-variant p-3">
+              <summary className="cursor-pointer font-label-lg text-label-lg text-primary">Auto-generated free block 0 (agents see this) — you don&apos;t write it</summary>
+              <pre className="mt-2 max-h-64 overflow-auto rounded-lg bg-[#0b0c10] p-4 font-data-mono text-[11px] text-[#e4e2dd]">{preview.block0Template}</pre>
+              <p className="mt-1 font-body-sm text-[12px] text-on-surface-variant">
+                Agents GET the endpoint, read this free block, pay per block via Circle Gateway, and retry with an <code>X-Payment-Token</code> header.
+              </p>
+            </details>
+          )}
+
+          {/* Publish blocked while a chunk violates the limits (article only). */}
+          {contentType === "article" && preview?.hasErrors && (
+            <div className="flex items-start gap-2 rounded-xl border border-error/40 bg-error/5 p-3 font-body-sm text-[13px] text-error">
+              <span className="material-symbols-outlined text-[18px]">error</span>
+              <span>Some chunks don&apos;t meet the limits. Fix the flagged chunks below or hit <strong>Auto-chunk</strong> before publishing.</span>
+            </div>
+          )}
+        </div>
+
+        {/* Action footer */}
+        <div className="flex flex-col-reverse gap-3 border-t border-outline-variant bg-surface-container-low/40 px-5 py-4 sm:flex-row sm:items-center sm:justify-between md:px-6">
+          <div className="flex flex-wrap gap-2">
+            {contentType === "article" && (
+              <button onClick={applyAutoChunk} disabled={!body.trim() || disabled} className="btn-outline px-4 py-2 disabled:opacity-50">Auto-chunk</button>
+            )}
+            {contentType !== "picture" && (
+              <button onClick={() => setShowChunks((s) => !s)} disabled={!preview} className="btn-outline px-4 py-2 disabled:opacity-50">{showChunks ? "Hide chunks" : "Preview chunks"}</button>
             )}
           </div>
-        )}
-
-        {showChunks && preview && (
-          <div className="mt-4 flex flex-col gap-2">
-            {preview.blocks.map((b) => {
-              const hasErr = (b.errors?.length ?? 0) > 0;
-              return (
-                <div
-                  key={b.index}
-                  className={`rounded-lg border p-3 text-body-sm ${hasErr ? "border-error/50 bg-error/5" : "border-outline-variant"}`}
-                >
-                  <span className="font-label-caps text-label-caps text-outline">
-                    Block {b.index}
-                    {typeof b.lines === "number" ? ` · ${b.lines} lines` : ""}
-                    {typeof b.words === "number" ? ` · ${b.words} words` : ` · ${b.length} chars`}
-                  </span>
-                  <p className="mt-1 text-on-surface-variant">{b.preview}…</p>
-                  {b.errors?.map((e, i) => (
-                    <p key={`e${i}`} className="mt-1 font-body-sm text-[12px] text-error">⚠ {e}</p>
-                  ))}
-                  {b.warnings?.map((w, i) => (
-                    <p key={`w${i}`} className="mt-1 font-body-sm text-[12px] text-on-surface-variant">ℹ {w}</p>
-                  ))}
-                </div>
-              );
-            })}
+          <div className="flex flex-wrap gap-2">
+            <button onClick={() => publish("draft")} disabled={busy || disabled || !title || !hasContent} className="btn-outline px-5 py-2 disabled:opacity-50">{editingId ? "Save as draft" : "Save draft"}</button>
+            <button
+              onClick={() => publish("published")}
+              disabled={busy || disabled || !title || !hasContent || (contentType === "article" && !!preview?.hasErrors)}
+              className="btn-primary flex items-center gap-1.5 px-6 py-2 disabled:opacity-50"
+            >
+              <span className="material-symbols-outlined text-[18px]">{editingId ? "save" : "rocket_launch"}</span>
+              {editingId ? "Update" : "Publish to feed"}
+            </button>
           </div>
-        )}
+        </div>
 
-        {published && (
-          <div className="mt-4 rounded-lg border border-secondary/30 bg-secondary/5 p-4">
-            <div className="mb-2 flex items-center gap-2 font-label-lg text-secondary"><span className="material-symbols-outlined text-[18px]">check_circle</span>Published! It&apos;s live in the For You feed. Share your links:</div>
-            <UrlRow label="Reader URL" url={published.readerUrl} />
-            {published.agentUrl && <UrlRow label="Agent endpoint" url={published.agentUrl} />}
-            <Link href="/for-you" className="mt-2 inline-block font-label-lg text-label-lg text-primary hover:underline">
-              View in For You →
-            </Link>
+        {(walletGatedDraft || (showChunks && preview) || published) && (
+          <div className="flex flex-col gap-4 border-t border-outline-variant px-5 py-5 md:px-6">
+            {/* Wallet gate: publish was saved as a draft because there's no payout wallet. */}
+            {walletGatedDraft && (
+              <div className="rounded-xl border border-primary/30 bg-primary/5 p-4">
+                <div className="mb-1 flex items-center gap-2 font-label-lg text-primary">
+                  <span className="material-symbols-outlined text-[18px]">account_balance_wallet</span>
+                  Saved to drafts. A wallet is needed to publish
+                </div>
+                <p className="mb-3 font-body-sm text-on-surface-variant">
+                  You get paid in USDC when readers unlock your work, so publishing needs a payout wallet.
+                  {embedded.status?.isAdmin
+                    ? " Connect an external wallet from the account menu, then hit Publish on the draft below."
+                    : " Your Skimflow wallet is created automatically — we'll publish this draft as soon as it's ready."}
+                </p>
+                {!embedded.status?.isAdmin && (
+                  <button onClick={createWalletAndPublish} disabled={busy} className="btn-primary px-5 py-2">
+                    {busy ? "Setting up…" : "Finish setup & publish"}
+                  </button>
+                )}
+              </div>
+            )}
+
+            {showChunks && preview && (
+              <div className="flex flex-col gap-2">
+                {preview.blocks.map((b) => {
+                  const hasErr = (b.errors?.length ?? 0) > 0;
+                  return (
+                    <div
+                      key={b.index}
+                      className={`rounded-lg border p-3 text-body-sm ${hasErr ? "border-error/50 bg-error/5" : "border-outline-variant"}`}
+                    >
+                      <span className="font-label-caps text-label-caps text-outline">
+                        Block {b.index}
+                        {typeof b.lines === "number" ? ` · ${b.lines} lines` : ""}
+                        {typeof b.words === "number" ? ` · ${b.words} words` : ` · ${b.length} chars`}
+                      </span>
+                      <p className="mt-1 text-on-surface-variant">{b.preview}…</p>
+                      {b.errors?.map((e, i) => (
+                        <p key={`e${i}`} className="mt-1 font-body-sm text-[12px] text-error">⚠ {e}</p>
+                      ))}
+                      {b.warnings?.map((w, i) => (
+                        <p key={`w${i}`} className="mt-1 font-body-sm text-[12px] text-on-surface-variant">ℹ {w}</p>
+                      ))}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {published && (
+              <div className="rounded-xl border border-secondary/30 bg-secondary/5 p-4">
+                <div className="mb-2 flex items-center gap-2 font-label-lg text-secondary"><span className="material-symbols-outlined text-[18px]">check_circle</span>Published! It&apos;s live in the For You feed. Share your links:</div>
+                <UrlRow label="Reader URL" url={published.readerUrl} />
+                {published.agentUrl && <UrlRow label="Agent endpoint" url={published.agentUrl} />}
+                <Link href="/for-you" className="mt-2 inline-block font-label-lg text-label-lg text-primary hover:underline">
+                  View in For You →
+                </Link>
+              </div>
+            )}
           </div>
         )}
       </div>
 
       {/* Content table */}
-      <div className="card">
-        <h2 className="mb-4 font-headline-sm text-headline-sm">Your content</h2>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-body-sm">
-            <thead className="font-label-caps text-label-caps text-on-surface-variant">
-              <tr className="border-b border-outline"><th className="py-2">Title</th><th>Type</th><th>Price</th><th>Status</th><th>Actions</th></tr>
-            </thead>
-            <tbody>
-              {list.map((c) => (
-                <tr key={c.id} className="border-b border-outline-variant">
-                  <td className="py-2"><a href={`/read/${c.slug}`} className="text-primary">{c.title}</a></td>
-                  <td><span className="pill">{c.content_type}</span></td>
-                  <td>{formatUsdc(c.price_per_block)} USDC</td>
-                  <td>{c.status}</td>
-                  <td className="flex gap-1 py-2">
-                    {c.content_type === "book" ? (
-                      // Books edit in the dedicated chapter builder.
-                      <Link href={`/dashboard/create-book?edit=${c.id}`} className="btn-outline px-2 py-1 text-[11px]">Edit</Link>
-                    ) : (
-                      <button disabled={disabled || busy} onClick={() => startEdit(c.id)} className="btn-outline px-2 py-1 text-[11px]">Edit</button>
-                    )}
-                    <button disabled={disabled} onClick={() => toggle(c.id, c.status)} className="btn-outline px-2 py-1 text-[11px]">{c.status === "published" ? "Unpublish" : "Publish"}</button>
-                    <button disabled={disabled} onClick={() => remove(c.id)} className="btn-outline px-2 py-1 text-[11px] text-red-600">Delete</button>
-                  </td>
-                </tr>
-              ))}
-              {list.length === 0 && <tr><td colSpan={5} className="py-4 text-on-surface-variant">No content yet.</td></tr>}
-            </tbody>
-          </table>
+      <div className="card !p-0 overflow-hidden">
+        <div className="flex items-center gap-2.5 border-b border-outline-variant px-5 py-4 md:px-6">
+          <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-secondary/10 text-secondary">
+            <span className="material-symbols-outlined text-[20px]">library_books</span>
+          </span>
+          <h2 className="font-headline-sm text-[15px] font-semibold">Your content</h2>
+          {list.length > 0 && (
+            <span className="ml-auto rounded-full bg-surface-container-high px-2.5 py-0.5 font-label-caps text-label-caps text-on-surface-variant">
+              {list.length}
+            </span>
+          )}
         </div>
+
+        {list.length === 0 ? (
+          <div className="flex flex-col items-center gap-1 px-6 py-12 text-center">
+            <span className="material-symbols-outlined text-[28px] text-outline">draft</span>
+            <p className="font-body-md text-on-surface-variant">Nothing published yet.</p>
+            <p className="font-body-sm text-[12px] text-outline">Create your first piece above to see it here.</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-body-sm">
+              <thead>
+                <tr className="border-b border-outline-variant font-label-caps text-label-caps text-on-surface-variant">
+                  <th className="px-5 py-2.5 md:px-6">Title</th>
+                  <th className="px-3 py-2.5">Type</th>
+                  <th className="px-3 py-2.5">Price</th>
+                  <th className="px-3 py-2.5">Status</th>
+                  <th className="px-5 py-2.5 text-right md:px-6">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {list.map((c) => (
+                  <tr key={c.id} className="border-b border-outline-variant/60 transition-colors last:border-0 hover:bg-surface-container-low/50">
+                    <td className="px-5 py-3 md:px-6">
+                      <a href={`/read/${c.slug}`} className="font-medium text-on-surface hover:text-primary hover:underline">{c.title}</a>
+                    </td>
+                    <td className="px-3 py-3"><span className="pill text-[10px]">{c.content_type}</span></td>
+                    <td className="whitespace-nowrap px-3 py-3 font-data-mono text-[12px] text-on-surface-variant">{formatUsdc(c.price_per_block)} USDC</td>
+                    <td className="px-3 py-3">
+                      <span
+                        className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-label-caps text-[10px] uppercase ${c.status === "published" ? "bg-secondary/10 text-secondary" : "bg-on-surface/5 text-on-surface-variant"}`}
+                      >
+                        <span className={`h-1.5 w-1.5 rounded-full ${c.status === "published" ? "bg-secondary" : "bg-outline"}`} />
+                        {c.status}
+                      </span>
+                    </td>
+                    <td className="px-5 py-3 md:px-6">
+                      <div className="flex justify-end gap-1">
+                        {c.content_type === "book" ? (
+                          <Link href={`/dashboard/create-book?edit=${c.id}`} className="btn-outline px-2.5 py-1 text-[11px]">Edit</Link>
+                        ) : (
+                          <button disabled={disabled || busy} onClick={() => startEdit(c.id)} className="btn-outline px-2.5 py-1 text-[11px] disabled:opacity-50">Edit</button>
+                        )}
+                        <button disabled={disabled} onClick={() => toggle(c.id, c.status)} className="btn-outline px-2.5 py-1 text-[11px] disabled:opacity-50">{c.status === "published" ? "Unpublish" : "Publish"}</button>
+                        <button disabled={disabled} onClick={() => remove(c.id)} className="btn-outline px-2.5 py-1 text-[11px] text-red-600 disabled:opacity-50">Delete</button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );

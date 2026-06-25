@@ -29,6 +29,11 @@ interface BookDraftSnapshot {
 const AUTOSAVE_KEY = "skimflow:create-book:autosave";
 const AUTOSAVE_VERSION = 1;
 
+/** Shared input styling — matches the dashboard ContentManager fields. */
+const inputClass =
+  "w-full rounded-lg border border-outline-variant bg-surface-container-low px-3.5 py-2.5 text-body-md text-on-surface placeholder:text-outline transition-colors focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20";
+const labelClass = "mb-1.5 block font-label-caps text-label-caps text-on-surface-variant";
+
 /** Only treat a snapshot as worth keeping/restoring if it has real content. */
 function snapshotHasContent(s: { title: string; description: string; chapters: ChapterDraft[] }) {
   return Boolean(s.title.trim() || s.description.trim() || s.chapters.some((c) => c.body.trim()));
@@ -286,64 +291,87 @@ export default function CreateBookPage() {
       )}
 
       {/* Book setup */}
-      <section className="card mb-6 flex flex-col gap-4">
-        <h2 className="font-headline-sm text-headline-sm">Book details</h2>
-        <div>
-          <label className="mb-1 block font-label-caps text-label-caps text-outline">Title</label>
-          <input
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="The title of your book"
-            className="w-full rounded-lg border border-outline-variant bg-surface-container-lowest px-3 py-2 font-body-md focus:border-primary focus:outline-none"
-          />
-        </div>
-        <div className="flex flex-col gap-4 sm:flex-row">
-          <div className="flex-1">
-            <label className="mb-1 block font-label-caps text-label-caps text-outline">Cover image URL (optional)</label>
-            <input
-              value={coverImageUrl}
-              onChange={(e) => setCoverImageUrl(e.target.value)}
-              placeholder="https://… or a Google Drive share link"
-              className="w-full rounded-lg border border-outline-variant bg-surface-container-lowest px-3 py-2 font-data-mono text-[13px] focus:border-primary focus:outline-none"
-            />
-          </div>
-          <div className="w-full sm:w-40">
-            <label className="mb-1 block font-label-caps text-label-caps text-outline">Price / page (USDC)</label>
-            <input
-              type="number"
-              min="0"
-              step="0.01"
-              value={price}
-              onChange={(e) => setPrice(e.target.value)}
-              className="w-full rounded-lg border border-outline-variant bg-surface-container-lowest px-3 py-2 font-data-mono focus:border-primary focus:outline-none"
-            />
+      <section className="card mb-6 !p-0 overflow-hidden">
+        <div className="flex items-center gap-2.5 border-b border-outline-variant px-5 py-4 md:px-6">
+          <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
+            <span className="material-symbols-outlined text-[20px]">menu_book</span>
+          </span>
+          <div>
+            <h2 className="font-headline-sm text-[15px] font-semibold leading-tight">Book details</h2>
+            <p className="font-body-sm text-[12px] text-on-surface-variant">Cover, blurb, and per-page price.</p>
           </div>
         </div>
-        {coverImageUrl.trim() && isLikelyImageUrl(normalizeImageUrl(coverImageUrl.trim())) && (
-          <div className="h-40 w-28 overflow-hidden rounded-lg border border-outline-variant">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={normalizeImageUrl(coverImageUrl.trim())} alt="cover preview" className="h-full w-full object-cover" />
+
+        <div className="flex flex-col gap-5 px-5 py-5 md:px-6">
+          <div>
+            <label className={labelClass}>Title</label>
+            <input
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="The title of your book"
+              className={inputClass}
+            />
           </div>
-        )}
-        <div>
-          <label className="mb-1 block font-label-caps text-label-caps text-outline">Description</label>
-          <textarea
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            rows={3}
-            placeholder="A short synopsis shown on the cover card."
-            className="w-full rounded-lg border border-outline-variant bg-surface-container-lowest px-3 py-2 font-body-md focus:border-primary focus:outline-none"
-          />
+
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
+            {coverImageUrl.trim() && isLikelyImageUrl(normalizeImageUrl(coverImageUrl.trim())) && (
+              <div className="h-40 w-28 shrink-0 overflow-hidden rounded-lg border border-outline-variant">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={normalizeImageUrl(coverImageUrl.trim())} alt="cover preview" className="h-full w-full object-cover" />
+              </div>
+            )}
+            <div className="flex flex-1 flex-col gap-5">
+              <div>
+                <label className={labelClass}>Cover image URL (optional)</label>
+                <input
+                  value={coverImageUrl}
+                  onChange={(e) => setCoverImageUrl(e.target.value)}
+                  placeholder="https://… or a Google Drive share link"
+                  className={`${inputClass} font-data-mono text-[13px]`}
+                />
+              </div>
+              <div className="w-full sm:w-48">
+                <label className={labelClass}>Price / page</label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={price}
+                    onChange={(e) => setPrice(e.target.value)}
+                    className={`${inputClass} pr-14 font-data-mono`}
+                  />
+                  <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 font-label-caps text-label-caps text-outline">USDC</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <label className={labelClass}>Description</label>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              rows={3}
+              placeholder="A short synopsis shown on the cover card."
+              className={`${inputClass} resize-y`}
+            />
+          </div>
         </div>
       </section>
 
       {/* Chapter builder */}
       <section className="mb-6 flex flex-col gap-4">
-        <div className="flex items-center justify-between">
-          <h2 className="font-headline-sm text-headline-sm">Chapters</h2>
-          <span className="font-body-sm text-[12px] text-on-surface-variant">
-            {totalPages} page{totalPages === 1 ? "" : "s"} total · page 1 is a free preview
+        <div className="flex items-center gap-2.5">
+          <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-secondary/10 text-secondary">
+            <span className="material-symbols-outlined text-[20px]">format_list_numbered</span>
           </span>
+          <div className="flex-1">
+            <h2 className="font-headline-sm text-[15px] font-semibold leading-tight">Chapters</h2>
+            <p className="font-body-sm text-[12px] text-on-surface-variant">
+              {totalPages} page{totalPages === 1 ? "" : "s"} total · page 1 is a free preview · split pages with a <code className="rounded bg-surface-container-high px-1">---</code> line
+            </p>
+          </div>
         </div>
 
         {chapters.map((ch, i) => (
@@ -354,16 +382,16 @@ export default function CreateBookPage() {
                 value={ch.title}
                 onChange={(e) => updateChapter(i, { title: e.target.value })}
                 placeholder="Chapter title"
-                className="flex-1 rounded-lg border border-outline-variant bg-surface-container-lowest px-3 py-1.5 font-body-md focus:border-primary focus:outline-none"
+                className={`${inputClass} flex-1 py-1.5`}
               />
-              <span className="shrink-0 font-data-mono text-[11px] text-outline">
+              <span className="hidden shrink-0 font-data-mono text-[11px] text-outline sm:inline">
                 {pageCounts[i]} page{pageCounts[i] === 1 ? "" : "s"} ·{" "}
                 {pageWords[i].reduce((a, b) => a + b, 0)} words
               </span>
               {chapters.length > 1 && (
                 <button
                   onClick={() => removeChapter(i)}
-                  className="shrink-0 text-outline hover:text-error"
+                  className="shrink-0 text-outline transition-colors hover:text-error"
                   title="Remove chapter"
                 >
                   <span className="material-symbols-outlined text-[20px]">delete</span>
@@ -375,7 +403,7 @@ export default function CreateBookPage() {
               onChange={(e) => updateChapter(i, { body: e.target.value })}
               rows={10}
               placeholder={"Paste the chapter text here (Markdown supported).\n\nSplit it into pages with a line containing only ---"}
-              className="w-full rounded-lg border border-outline-variant bg-surface-container-lowest px-3 py-2 font-reading text-[15px] leading-relaxed focus:border-primary focus:outline-none"
+              className={`${inputClass} resize-y font-reading text-[15px] leading-relaxed`}
             />
             {/* Live per-page word counter — pages split on `---`; book page 1 is
                 the free preview. ~150-250 words/page reads well in the viewer. */}
@@ -407,13 +435,19 @@ export default function CreateBookPage() {
         </button>
       </section>
 
-      <div className="sticky bottom-4 flex gap-3 rounded-xl border border-outline-variant bg-surface/95 p-3 backdrop-blur">
-        <button onClick={() => submit("draft")} disabled={busy} className="flex-1 rounded-lg border border-outline-variant px-4 py-2.5 font-body-md hover:bg-surface-container-low disabled:opacity-60">
-          Save draft
-        </button>
-        <button onClick={() => submit("published")} disabled={busy} className="btn-primary flex-[2] px-4 py-2.5">
-          {busy ? "Saving…" : "Publish book"}
-        </button>
+      <div className="sticky bottom-4 flex items-center gap-3 rounded-xl border border-outline-variant bg-surface/95 p-3 shadow-lg backdrop-blur">
+        <span className="ml-1 hidden font-data-mono text-[11px] text-outline sm:inline">
+          {totalPages} page{totalPages === 1 ? "" : "s"}
+        </span>
+        <div className="flex flex-1 justify-end gap-2">
+          <button onClick={() => submit("draft")} disabled={busy} className="btn-outline px-5 py-2.5 disabled:opacity-50">
+            Save draft
+          </button>
+          <button onClick={() => submit("published")} disabled={busy} className="btn-primary flex items-center gap-1.5 px-6 py-2.5 disabled:opacity-50">
+            <span className="material-symbols-outlined text-[18px]">rocket_launch</span>
+            {busy ? "Saving…" : editingId ? "Update book" : "Publish book"}
+          </button>
+        </div>
       </div>
     </div>
   );

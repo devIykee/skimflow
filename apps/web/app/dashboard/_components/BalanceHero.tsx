@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { formatUsdc } from "@/lib/money";
+import { useToast } from "@/components/Toaster";
 
 interface BalanceData {
   signedIn: boolean;
@@ -19,8 +20,19 @@ interface BalanceData {
  * a broken/empty UI.
  */
 export default function BalanceHero() {
+  const toast = useToast();
   const [data, setData] = useState<BalanceData | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+
+  async function copyAddress() {
+    if (!data?.address) return;
+    try {
+      await navigator.clipboard.writeText(data.address);
+      toast("success", "Address copied.");
+    } catch {
+      toast("error", "Couldn’t copy. Select it manually.");
+    }
+  }
 
   const load = useCallback(async () => {
     setRefreshing(true);
@@ -60,9 +72,14 @@ export default function BalanceHero() {
             </div>
           )}
           {ready && data!.address && (
-            <div className="mt-1 truncate font-data-mono text-[11px] text-outline">
+            <button
+              onClick={copyAddress}
+              title="Copy wallet address"
+              className="group mt-1 inline-flex items-center gap-1 font-data-mono text-[11px] text-outline transition-colors hover:text-primary"
+            >
               {data!.address!.slice(0, 10)}…{data!.address!.slice(-6)}
-            </div>
+              <span className="material-symbols-outlined text-[14px] opacity-60 group-hover:opacity-100">content_copy</span>
+            </button>
           )}
         </div>
         <button

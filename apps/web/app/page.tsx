@@ -54,8 +54,7 @@ export default async function Home() {
             Get paid every time someone reads a block of your story.
           </h1>
           <p className="mx-auto max-w-2xl font-body-lg text-body-lg text-on-surface-variant">
-            Your readers pay per block. Agents welcome. Value too small to have been worth moving before:
-            per block, per citation, settled instantly as USDC on Arc through Circle Gateway.
+            Skimflow lets writers earn USDC every time someone reads a block of their story, with instant settlement.
           </p>
           <div className="flex flex-col items-center justify-center gap-gutter pt-stack-md sm:flex-row">
             <Link href="/for-you" className="btn-primary w-full px-10 py-4 !text-body-lg editorial-shadow sm:w-auto">

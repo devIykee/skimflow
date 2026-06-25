@@ -28,7 +28,6 @@ interface Overview {
 }
 
 export default function WalletPanel({ impersonating }: { impersonating: boolean }) {
-  const toast = useToast();
   const [data, setData] = useState<Overview | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -62,28 +61,6 @@ export default function WalletPanel({ impersonating }: { impersonating: boolean 
 
   return (
     <div className="flex flex-col gap-6">
-      {/* Wallet address — the balance itself lives in the dashboard hero, so it's
-          shown once. This card is just the "receive funds here" address. */}
-      {data.fundingAddress && (
-        <div className="card">
-          <div className="mb-1 font-label-caps text-label-caps text-outline">Your wallet address (receive funds here)</div>
-          <button
-            onClick={async () => {
-              try {
-                await navigator.clipboard.writeText(data.fundingAddress!);
-                toast("success", "Address copied.");
-              } catch {
-                toast("error", "Couldn’t copy. Select it manually.");
-              }
-            }}
-            className="font-data-mono text-[12px] text-primary hover:underline"
-            title="Copy address"
-          >
-            {data.fundingAddress}
-          </button>
-        </div>
-      )}
-
       {/* Withdraw (embedded wallets only) */}
       {data.hasEmbedded && !data.isAdmin && (
         <WithdrawForm
