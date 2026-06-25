@@ -1,8 +1,8 @@
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import Link from "next/link";
-import { getUserById, listPublishedByCreator } from "@/lib/store";
-import { publicName } from "@/lib/creator-posts";
+import { listPublishedByCreator } from "@/lib/store";
+import { publicName, resolveCreator } from "@/lib/creator-posts";
 
 export const dynamic = "force-dynamic";
 
@@ -12,7 +12,7 @@ const feedHref = (id: string) => `/api/creators/${id}/feed.xml`;
 /** Public profile metadata + auto-discoverable RSS <link> in the head. */
 export async function generateMetadata({ params }: { params: Promise<{ creatorId: string }> }): Promise<Metadata> {
   const { creatorId } = await params;
-  const creator = await getUserById(creatorId).catch(() => null);
+  const creator = await resolveCreator(creatorId).catch(() => null);
   if (!creator || creator.role === "admin" || creator.suspended) {
     return { title: "Creator not found", robots: { index: false, follow: false } };
   }
@@ -23,9 +23,10 @@ export async function generateMetadata({ params }: { params: Promise<{ creatorId
     title,
     description,
     alternates: {
-      canonical: `/creator/${creatorId}`,
+      // Canonicalize to the stable UUID even when reached via a handle.
+      canonical: `/creator/${creator.id}`,
       // Auto-discoverable RSS feed (RSS readers + RSSHub Radar pick this up).
-      types: { "application/rss+xml": [{ url: feedHref(creatorId), title }] },
+      types: { "application/rss+xml": [{ url: feedHref(creator.id), title }] },
     },
     openGraph: { title, description, type: "profile", images: creator.avatar ? [{ url: creator.avatar }] : undefined },
   };
@@ -33,11 +34,11 @@ export async function generateMetadata({ params }: { params: Promise<{ creatorId
 
 export default async function CreatorProfilePage({ params }: { params: Promise<{ creatorId: string }> }) {
   const { creatorId } = await params;
-  const creator = await getUserById(creatorId).catch(() => null);
+  const creator = await resolveCreator(creatorId).catch(() => null);
   if (!creator || creator.role === "admin" || creator.suspended) notFound();
 
   const name = publicName(creator);
-  const posts = await listPublishedByCreator(creatorId, { limit: FEED_LIMIT });
+  const posts = await listPublishedByCreator(creator.id, { limit: FEED_LIMIT });
 
   return (
     <div className="mx-auto max-w-max-width px-margin-mobile py-stack-lg md:px-margin-desktop">
@@ -57,7 +58,7 @@ export default async function CreatorProfilePage({ params }: { params: Promise<{
             {creator.verified && <span className="material-symbols-outlined text-[18px] text-secondary" title="Verified">verified</span>}
             {/* Unobtrusive RSS subscribe link. */}
             <a
-              href={feedHref(creatorId)}
+              href={feedHref(creator.id)}
               title={`Subscribe to ${name}'s RSS feed`}
               aria-label="RSS feed"
               className="ml-auto inline-flex items-center gap-1 rounded-full border border-outline-variant px-2.5 py-1 text-[#ee802f] transition-colors hover:border-[#ee802f]"

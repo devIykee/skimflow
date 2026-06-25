@@ -15,8 +15,29 @@
  * single free block); paid posts expose the teaser only.
  */
 import type { Content, ContentType, User } from "./types.js";
-import { getFreeBlock } from "./store.js";
+import { getFreeBlock, getUserById, getUserByHandle, normalizeHandle } from "./store.js";
 import { buildBlock0, gatewayAddressFor } from "./agent-skills.js";
+
+/** RFC 4122 UUID shape (any version). */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Resolve a `:creatorId` route param to a user. The param may be a UUID (query
+ * by id) OR a handle/username (resolve to the user via the handle field, after
+ * stripping a leading "@" and normalizing the same way handles are stored).
+ * Returns null when nothing matches — callers should 404. This avoids passing a
+ * non-UUID into a uuid-typed query ("invalid input syntax for type uuid").
+ */
+export async function resolveCreator(idOrHandle: string): Promise<User | null> {
+  const raw = (idOrHandle ?? "").trim();
+  if (!raw) return null;
+  if (UUID_RE.test(raw)) {
+    return (await getUserById(raw)) ?? null;
+  }
+  const handle = normalizeHandle(raw.replace(/^@/, ""));
+  if (!handle) return null;
+  return (await getUserByHandle(handle)) ?? null;
+}
 
 /** Canonical site origin, no trailing slash. */
 export function siteUrl(): string {
