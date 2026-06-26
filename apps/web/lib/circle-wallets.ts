@@ -102,11 +102,13 @@ export async function provisionWallet(): Promise<ProvisionedWallet> {
 }
 
 /**
- * Read the wallet's spendable USDC balance (decimal string). Uses the balance
- * endpoint — NEVER getWallet, which never returns balances. Returns "0" if the
- * token isn't held yet.
+ * Find the wallet's USDC token-balance entry (carries Circle's `token.id` and
+ * the decimal `amount`). Uses the balance endpoint — NEVER getWallet, which
+ * never returns balances. Returns null when the wallet doesn't hold USDC yet.
  */
-export async function getUsdcBalance(walletId: string): Promise<string> {
+async function findUsdcBalance(
+  walletId: string
+): Promise<{ tokenId: string | undefined; amount: string } | null> {
   const res = await circle().getWalletTokenBalance({ id: walletId });
   const balances = res.data?.tokenBalances ?? [];
   const usdc = balances.find((b) => {
@@ -114,7 +116,13 @@ export async function getUsdcBalance(walletId: string): Promise<string> {
     const addr = b.token?.tokenAddress?.toLowerCase();
     return sym === "USDC" || (!!USDC_ADDRESS && addr === USDC_ADDRESS);
   });
-  return usdc?.amount ?? "0";
+  if (!usdc) return null;
+  return { tokenId: usdc.token?.id, amount: usdc.amount ?? "0" };
+}
+
+/** The wallet's spendable USDC balance (decimal string); "0" if none held. */
+export async function getUsdcBalance(walletId: string): Promise<string> {
+  return (await findUsdcBalance(walletId))?.amount ?? "0";
 }
 
 export interface WalletTx {
@@ -152,9 +160,14 @@ export async function transferUsdc(input: {
   amountUsdc: string;
   idempotencyKey: string;
 }): Promise<{ id: string }> {
+  // Transfer by Circle's tokenId (not tokenAddress): tokenAddress must be paired
+  // with a blockchain, and Circle rejects it otherwise ("API parameter invalid").
+  // tokenId is unambiguous and needs nothing else.
+  const usdc = await findUsdcBalance(input.walletId);
+  if (!usdc?.tokenId) throw new Error("No USDC balance found in this wallet to withdraw.");
   const res = await circle().createTransaction({
     walletId: input.walletId,
-    tokenAddress: USDC_ADDRESS,
+    tokenId: usdc.tokenId,
     destinationAddress: input.destinationAddress,
     amounts: [input.amountUsdc],
     idempotencyKey: input.idempotencyKey,
