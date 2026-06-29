@@ -1692,3 +1692,313 @@ export function markNotificationsRead(userId: string, ids?: string[]): Promise<u
   }
   return query(`UPDATE notifications SET read = TRUE WHERE user_id = $1 AND read = FALSE`, [userId]);
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Social layer (migration 0013): follows, comments, social notifications.
+// All NEW functions — the existing notification helpers above are untouched.
+// "Posts" are `content` rows; a post's author is content.creator_id.
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ── Follows ──────────────────────────────────────────────────────────────────
+
+export interface FollowRow {
+  id: string;
+  follower_id: string;
+  following_id: string;
+  created_at: Date;
+}
+
+/**
+ * Follow a user. Idempotent: a duplicate (follower, following) pair is a no-op
+ * (ON CONFLICT DO NOTHING), returning undefined when the edge already existed.
+ * Self-follows are rejected at the API layer, not here.
+ */
+export function followUser(followerId: string, followingId: string): Promise<FollowRow | undefined> {
+  return queryOne<FollowRow>(
+    `INSERT INTO follows (follower_id, following_id) VALUES ($1, $2)
+     ON CONFLICT (follower_id, following_id) DO NOTHING
+     RETURNING *`,
+    [followerId, followingId]
+  );
+}
+
+/** Remove a follow edge. No-op if it doesn't exist. */
+export function unfollowUser(followerId: string, followingId: string): Promise<unknown> {
+  return query(`DELETE FROM follows WHERE follower_id = $1 AND following_id = $2`, [followerId, followingId]);
+}
+
+export function isFollowing(followerId: string, followingId: string): Promise<boolean> {
+  return queryOne<{ x: number }>(
+    `SELECT 1 AS x FROM follows WHERE follower_id = $1 AND following_id = $2`,
+    [followerId, followingId]
+  ).then((r) => !!r);
+}
+
+/** How many users follow `userId`. */
+export function getFollowerCount(userId: string): Promise<number> {
+  return queryOne<{ n: string }>(
+    `SELECT COUNT(*)::int AS n FROM follows WHERE following_id = $1`,
+    [userId]
+  ).then((r) => Number(r?.n ?? 0));
+}
+
+/** How many users `userId` follows. */
+export function getFollowingCount(userId: string): Promise<number> {
+  return queryOne<{ n: string }>(
+    `SELECT COUNT(*)::int AS n FROM follows WHERE follower_id = $1`,
+    [userId]
+  ).then((r) => Number(r?.n ?? 0));
+}
+
+/**
+ * Strictly-chronological feed of PUBLISHED content from everyone `userId`
+ * follows (newest first), paginated by 1-based `page`. Same row shape as the
+ * marketplace feed (ContentWithCreator) so callers serialize it identically.
+ */
+export function getFollowingFeed(userId: string, page = 1, limit = 20): Promise<ContentWithCreator[]> {
+  const lim = Math.min(Math.max(limit, 1), 50);
+  const offset = Math.max((Math.max(page, 1) - 1) * lim, 0);
+  return query<ContentWithCreator>(
+    `SELECT c.*, u.handle AS creator_handle, u.display_name AS creator_name,
+            u.avatar AS creator_avatar, u.verified AS creator_verified
+       FROM content c
+       JOIN users u ON u.id = c.creator_id
+      WHERE c.status = 'published'
+        AND c.creator_id IN (SELECT following_id FROM follows WHERE follower_id = $1)
+      ORDER BY COALESCE(c.published_at, c.created_at) DESC
+      LIMIT $2 OFFSET $3`,
+    [userId, lim, offset]
+  );
+}
+
+export interface SuggestedCreator {
+  id: string;
+  display_name: string | null;
+  handle: string | null;
+  name: string | null;
+  avatar: string | null;
+}
+
+/**
+ * Up to `limit` random creators for `userId` to follow: active creators (not
+ * the user, not already followed) who have at least one published piece. Powers
+ * the "follow nobody" empty state on the following feed.
+ */
+export function getSuggestedCreators(userId: string, limit = 5): Promise<SuggestedCreator[]> {
+  return query<SuggestedCreator>(
+    `SELECT id, display_name, handle, name, avatar
+       FROM users
+      WHERE role = 'creator' AND suspended = FALSE AND id <> $1
+        AND id NOT IN (SELECT following_id FROM follows WHERE follower_id = $1)
+        AND EXISTS (SELECT 1 FROM content WHERE creator_id = users.id AND status = 'published')
+      ORDER BY RANDOM()
+      LIMIT $2`,
+    [userId, Math.min(Math.max(limit, 1), 20)]
+  );
+}
+
+// ── Comments ─────────────────────────────────────────────────────────────────
+
+export interface CommentRow {
+  id: string;
+  post_id: string;
+  user_id: string;
+  parent_id: string | null;
+  content: string;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface CommentWithAuthor extends CommentRow {
+  author_name: string | null;
+  author_handle: string | null;
+  author_avatar: string | null;
+  /** Direct replies to this comment (present on top-level rows only). */
+  reply_count?: number;
+}
+
+const COMMENT_AUTHOR_COLS = `
+  cm.id, cm.post_id, cm.user_id, cm.parent_id, cm.content, cm.created_at, cm.updated_at,
+  u.display_name AS author_name, u.handle AS author_handle, u.avatar AS author_avatar`;
+
+/** A single comment with author info (or undefined). */
+export function getCommentById(commentId: string): Promise<CommentWithAuthor | undefined> {
+  return queryOne<CommentWithAuthor>(
+    `SELECT ${COMMENT_AUTHOR_COLS}
+       FROM comments cm JOIN users u ON u.id = cm.user_id
+      WHERE cm.id = $1`,
+    [commentId]
+  );
+}
+
+/**
+ * Top-level comments for a post (parent_id IS NULL), newest first, paginated by
+ * 1-based `page`. Each row carries its author and a count of direct replies.
+ */
+export function getCommentsByPost(postId: string, page = 1, limit = 20): Promise<CommentWithAuthor[]> {
+  const lim = Math.min(Math.max(limit, 1), 100);
+  const offset = Math.max((Math.max(page, 1) - 1) * lim, 0);
+  return query<CommentWithAuthor>(
+    `SELECT ${COMMENT_AUTHOR_COLS},
+            (SELECT COUNT(*)::int FROM comments r WHERE r.parent_id = cm.id) AS reply_count
+       FROM comments cm JOIN users u ON u.id = cm.user_id
+      WHERE cm.post_id = $1 AND cm.parent_id IS NULL
+      ORDER BY cm.created_at DESC
+      LIMIT $2 OFFSET $3`,
+    [postId, lim, offset]
+  );
+}
+
+/** All replies to a comment, oldest first (chronological reading order). */
+export function getRepliesByComment(commentId: string): Promise<CommentWithAuthor[]> {
+  return query<CommentWithAuthor>(
+    `SELECT ${COMMENT_AUTHOR_COLS}
+       FROM comments cm JOIN users u ON u.id = cm.user_id
+      WHERE cm.parent_id = $1
+      ORDER BY cm.created_at ASC`,
+    [commentId]
+  );
+}
+
+/** Total comments on a post (top-level + replies). */
+export function getCommentCount(postId: string): Promise<number> {
+  return queryOne<{ n: string }>(
+    `SELECT COUNT(*)::int AS n FROM comments WHERE post_id = $1`,
+    [postId]
+  ).then((r) => Number(r?.n ?? 0));
+}
+
+/**
+ * Create a comment (or reply when `parentId` is given) and return it with author
+ * info. Enforces single-level nesting at the store layer:
+ *   • the parent must exist and belong to the SAME post, else throws.
+ *   • the parent must itself be top-level (parent_id IS NULL) — replying to a
+ *     reply throws.
+ */
+export async function createComment(
+  postId: string,
+  userId: string,
+  content: string,
+  parentId?: string | null
+): Promise<CommentWithAuthor> {
+  if (parentId) {
+    const parent = await queryOne<CommentRow>(`SELECT * FROM comments WHERE id = $1`, [parentId]);
+    if (!parent || parent.post_id !== postId) {
+      throw new Error("invalid_parent");
+    }
+    if (parent.parent_id !== null) {
+      throw new Error("nesting_too_deep");
+    }
+  }
+  const inserted = await queryOne<CommentRow>(
+    `INSERT INTO comments (post_id, user_id, content, parent_id)
+     VALUES ($1, $2, $3, $4) RETURNING *`,
+    [postId, userId, content, parentId ?? null]
+  );
+  // Re-read with author info so the caller gets a uniform shape.
+  const withAuthor = await getCommentById(inserted!.id);
+  return withAuthor!;
+}
+
+/** Delete a comment, but only if `userId` is its author. Returns whether a row was removed. */
+export async function deleteComment(commentId: string, userId: string): Promise<boolean> {
+  const rows = await query<{ id: string }>(
+    `DELETE FROM comments WHERE id = $1 AND user_id = $2 RETURNING id`,
+    [commentId, userId]
+  );
+  return rows.length > 0;
+}
+
+// ── Social notifications (extend the 0012 notifications table) ───────────────
+// Distinct from createNotification/listNotifications above (those carry Ghost
+// title/body/link). These reference an actor + optional post/comment; the
+// recipient-facing text is rendered client-side from those refs.
+
+export type SocialNotificationType = "new_follower" | "post_comment" | "comment_reply";
+
+export interface NotificationEnriched {
+  id: string;
+  user_id: string;
+  type: string;
+  title: string | null;
+  body: string;
+  link: string | null;
+  read: boolean;
+  created_at: Date;
+  actor_id: string | null;
+  post_id: string | null;
+  comment_id: string | null;
+  actor_name: string | null;
+  actor_handle: string | null;
+  actor_avatar: string | null;
+  post_title: string | null;
+  post_slug: string | null;
+  /** First 60 chars of the referenced comment, when comment_id is set. */
+  comment_preview: string | null;
+}
+
+/**
+ * Create a social notification. Fire-and-forget: NEVER throws (logs instead),
+ * and skips self-notifications (recipient === actor).
+ */
+export async function createSocialNotification(
+  userId: string,
+  actorId: string,
+  type: SocialNotificationType,
+  postId?: string | null,
+  commentId?: string | null
+): Promise<void> {
+  if (userId === actorId) return;
+  try {
+    await query(
+      `INSERT INTO notifications (user_id, actor_id, type, post_id, comment_id)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [userId, actorId, type, postId ?? null, commentId ?? null]
+    );
+  } catch (e) {
+    console.error("[createSocialNotification]", (e as Error)?.message ?? e);
+  }
+}
+
+/**
+ * A user's notifications (newest first), paginated by 1-based `page`, enriched
+ * with actor info, referenced post title/slug, and a 60-char comment preview.
+ * Returns BOTH social and legacy (Ghost) rows under the one unified list.
+ */
+export function listNotificationsEnriched(userId: string, page = 1, limit = 20): Promise<NotificationEnriched[]> {
+  const lim = Math.min(Math.max(limit, 1), 100);
+  const offset = Math.max((Math.max(page, 1) - 1) * lim, 0);
+  return query<NotificationEnriched>(
+    `SELECT n.id, n.user_id, n.type, n.title, n.body, n.link, n.read, n.created_at,
+            n.actor_id, n.post_id, n.comment_id,
+            a.display_name AS actor_name, a.handle AS actor_handle, a.avatar AS actor_avatar,
+            ct.title AS post_title, ct.slug AS post_slug,
+            LEFT(cm.content, 60) AS comment_preview
+       FROM notifications n
+       LEFT JOIN users a    ON a.id  = n.actor_id
+       LEFT JOIN content ct ON ct.id = n.post_id
+       LEFT JOIN comments cm ON cm.id = n.comment_id
+      WHERE n.user_id = $1
+      ORDER BY n.created_at DESC
+      LIMIT $2 OFFSET $3`,
+    [userId, lim, offset]
+  );
+}
+
+/** Mark every unread notification for a user as read. */
+export function markAllNotificationsRead(userId: string): Promise<unknown> {
+  return query(`UPDATE notifications SET read = TRUE WHERE user_id = $1 AND read = FALSE`, [userId]);
+}
+
+/** Mark one notification read — scoped to its owner so users can't touch others'. */
+export function markNotificationRead(notificationId: string, userId: string): Promise<unknown> {
+  return query(`UPDATE notifications SET read = TRUE WHERE id = $1 AND user_id = $2`, [notificationId, userId]);
+}
+
+/** Count of a user's unread notifications (social + legacy). */
+export function getUnreadNotificationCount(userId: string): Promise<number> {
+  return queryOne<{ n: string }>(
+    `SELECT COUNT(*)::int AS n FROM notifications WHERE user_id = $1 AND read = FALSE`,
+    [userId]
+  ).then((r) => Number(r?.n ?? 0));
+}

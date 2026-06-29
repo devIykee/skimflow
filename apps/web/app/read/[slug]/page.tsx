@@ -4,6 +4,7 @@ import { getChapters, getChunks, getContentWithCreator, getUserById, incrementVi
 import { currentSession } from "@/lib/session";
 import ChunkReader from "./_components/ChunkReader";
 import BookReader from "./_components/BookReader";
+import CommentsSection from "./_components/CommentsSection";
 
 export const dynamic = "force-dynamic";
 
@@ -160,6 +161,8 @@ export default async function ReaderPage({ params }: { params: Promise<{ slug: s
           caption: c.caption,
         }))}
       />
+      {/* Social discussion lives below the reader (not on the full-screen book reader). */}
+      <CommentsSection postId={content.id} />
     </>
   );
 }

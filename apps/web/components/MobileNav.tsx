@@ -11,6 +11,7 @@ import { usePathname } from "next/navigation";
  */
 const ITEMS: { href: string; label: string; icon: string }[] = [
   { href: "/for-you", label: "For You", icon: "auto_awesome" },
+  { href: "/following", label: "Following", icon: "group" },
   { href: "/docs", label: "Docs", icon: "menu_book" },
   { href: "/dashboard", label: "Dashboard", icon: "dashboard" },
 ];

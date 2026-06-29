@@ -19,3 +19,4 @@ typechain-types/
 *.tsbuildinfo
 .DS_Store
 *.log
+.claude/

@@ -1,8 +1,9 @@
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import Link from "next/link";
-import { listPublishedByCreator } from "@/lib/store";
+import { getFollowerCount, listPublishedByCreator } from "@/lib/store";
 import { publicName, resolveCreator } from "@/lib/creator-posts";
+import FollowButton from "@/components/FollowButton";
 
 export const dynamic = "force-dynamic";
 
@@ -38,7 +39,10 @@ export default async function CreatorProfilePage({ params }: { params: Promise<{
   if (!creator || creator.role === "admin" || creator.suspended) notFound();
 
   const name = publicName(creator);
-  const posts = await listPublishedByCreator(creator.id, { limit: FEED_LIMIT });
+  const [posts, followerCount] = await Promise.all([
+    listPublishedByCreator(creator.id, { limit: FEED_LIMIT }),
+    getFollowerCount(creator.id),
+  ]);
 
   return (
     <div className="mx-auto max-w-max-width px-margin-mobile py-stack-lg md:px-margin-desktop">
@@ -56,6 +60,8 @@ export default async function CreatorProfilePage({ params }: { params: Promise<{
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="font-display-lg text-display-lg-mobile md:text-headline-md">{name}</h1>
             {creator.verified && <span className="material-symbols-outlined text-[18px] text-secondary" title="Verified">verified</span>}
+            {/* Follow / Unfollow + follower count (hidden on your own profile). */}
+            <FollowButton userId={creator.id} initialFollowerCount={followerCount} showCount />
             {/* Unobtrusive RSS subscribe link. */}
             <a
               href={feedHref(creator.id)}
