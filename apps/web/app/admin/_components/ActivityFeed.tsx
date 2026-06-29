@@ -63,7 +63,7 @@ function describe(e: FeedEvent): string {
     case "ADMIN_EMAIL":
       return (e.metadata?.action as string) === "resend_welcome"
         ? `resent welcome to ${(e.metadata?.email as string) ?? "user"}`
-        : `admin email → ${(e.metadata?.target as string) ?? "?"} (${(e.metadata?.sent as number) ?? 1} sent)`;
+        : `admin email → ${(e.metadata?.target as string) ?? "?"} (${(e.metadata?.sent as number) ?? 1} sent${(e.metadata?.target as string) === "selected" ? `, ${((e.metadata?.userIds as string[]) ?? []).length} picked` : ""})`;
     default:
       return e.event_type;
   }

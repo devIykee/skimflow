@@ -9,16 +9,17 @@ interface UserRow {
   display_name: string | null;
 }
 
-type Target = "user" | "all" | "creators";
+type Target = "user" | "selected" | "all" | "creators";
 
 function AdminEmailInner() {
   const searchParams = useSearchParams();
   const prefillUserId = searchParams.get("userId") ?? "";
 
-  const [target, setTarget] = useState<Target>(prefillUserId ? "user" : "user");
+  const [target, setTarget] = useState<Target>(prefillUserId ? "selected" : "user");
   const [userId, setUserId] = useState(prefillUserId);
   const [userSearch, setUserSearch] = useState("");
   const [userOptions, setUserOptions] = useState<UserRow[]>([]);
+  const [selectedUsers, setSelectedUsers] = useState<Record<string, UserRow>>({});
   const [counts, setCounts] = useState({ all: 0, creators: 0 });
   const [provider, setProvider] = useState<{ configured: boolean; from?: string; missing: string[] } | null>(null);
   const [adminEmail, setAdminEmail] = useState<string | null>(null);
@@ -42,7 +43,7 @@ function AdminEmailInner() {
   }, []);
 
   const loadUsers = useCallback(() => {
-    const p = new URLSearchParams({ limit: "20" });
+    const p = new URLSearchParams({ limit: "50" });
     if (userSearch) p.set("search", userSearch);
     fetch(`/api/admin/users?${p}`, { credentials: "include" })
       .then((r) => r.json())
@@ -59,14 +60,48 @@ function AdminEmailInner() {
   }, [userSearch]);
 
   useEffect(() => {
-    if (target !== "user") return;
+    if (target !== "user" && target !== "selected") return;
     const t = setTimeout(loadUsers, 250);
     return () => clearTimeout(t);
   }, [target, loadUsers]);
 
   useEffect(() => {
-    if (prefillUserId) setUserId(prefillUserId);
+    if (!prefillUserId) return;
+    setUserId(prefillUserId);
+    setTarget("selected");
   }, [prefillUserId]);
+
+  useEffect(() => {
+    if (!prefillUserId) return;
+    const match = userOptions.find((u) => u.id === prefillUserId);
+    if (match) {
+      setSelectedUsers((prev) => (prev[prefillUserId] ? prev : { ...prev, [prefillUserId]: match }));
+    }
+  }, [prefillUserId, userOptions]);
+
+  function toggleUser(u: UserRow) {
+    setSelectedUsers((prev) => {
+      const next = { ...prev };
+      if (next[u.id]) delete next[u.id];
+      else next[u.id] = u;
+      return next;
+    });
+  }
+
+  function selectAllVisible() {
+    setSelectedUsers((prev) => {
+      const next = { ...prev };
+      for (const u of userOptions) next[u.id] = u;
+      return next;
+    });
+  }
+
+  function clearSelected() {
+    setSelectedUsers({});
+  }
+
+  const selectedCount = Object.keys(selectedUsers).length;
+  const selectedList = Object.values(selectedUsers);
 
   async function sendTest() {
     setBusy(true);
@@ -107,7 +142,8 @@ function AdminEmailInner() {
     try {
       const payload: Record<string, unknown> = { target, subject, body };
       if (target === "user") payload.userId = userId;
-      if (target !== "user") payload.confirmBroadcast = confirmBroadcast;
+      if (target === "selected") payload.userIds = Object.keys(selectedUsers);
+      if (target === "all" || target === "creators") payload.confirmBroadcast = confirmBroadcast;
 
       const r = await fetch("/api/admin/email", {
         method: "POST",
@@ -123,13 +159,22 @@ function AdminEmailInner() {
       }
       if (target === "user") {
         setMsg("Email sent.");
-      } else if (d.failed > 0) {
-        setErr(d.message ?? d.errorSummary ?? `All ${d.failed} sends failed.`);
+      } else if (target === "selected" && (d.failed ?? 0) === 0 && (d.sent ?? 0) === (d.total ?? 0)) {
+        setMsg(`Sent to ${d.sent ?? 0} selected user${(d.sent ?? 0) === 1 ? "" : "s"}.`);
+      } else if ((d.failed ?? 0) > 0 || (d.sent ?? 0) < (d.total ?? 0)) {
+        const partial = (d.sent ?? 0) > 0 && (d.sent ?? 0) < (d.total ?? 0);
+        setErr(
+          d.message ??
+            d.errorSummary ??
+            (partial
+              ? `Only ${d.sent} of ${d.total} emails were accepted.`
+              : `All ${d.total ?? d.failed} sends failed.`)
+        );
         if (Array.isArray(d.errors)) setErrDetails(d.errors);
       } else {
         setMsg(`Sent ${d.sent ?? 0} of ${d.total ?? 0}.`);
       }
-      if (target !== "user") setConfirmBroadcast(false);
+      if (target === "all" || target === "creators") setConfirmBroadcast(false);
     } catch {
       setErr("Network error.");
     } finally {
@@ -154,6 +199,7 @@ function AdminEmailInner() {
             {(
               [
                 ["user", "One user"],
+                ["selected", selectedCount > 0 ? `Pick users (${selectedCount})` : "Pick users"],
                 ["creators", `All creators (${counts.creators})`],
                 ["all", `All users (${counts.all})`],
               ] as const
@@ -201,7 +247,63 @@ function AdminEmailInner() {
           </div>
         )}
 
-        {target !== "user" && (
+        {target === "selected" && (
+          <div className="mb-4">
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+              <label className="font-label-lg text-label-lg">Select recipients</label>
+              <div className="flex gap-2">
+                <button type="button" onClick={selectAllVisible} className="btn-outline px-2 py-1 text-[11px]">
+                  Select all shown
+                </button>
+                <button type="button" onClick={clearSelected} disabled={selectedCount === 0} className="btn-outline px-2 py-1 text-[11px] disabled:opacity-50">
+                  Clear
+                </button>
+              </div>
+            </div>
+            <input
+              value={userSearch}
+              onChange={(e) => setUserSearch(e.target.value)}
+              placeholder="Search name or email…"
+              className="mb-2 w-full rounded-lg border border-outline px-3 py-2 text-body-sm"
+            />
+            <div className="max-h-56 overflow-y-auto rounded-lg border border-outline">
+              {userOptions.length === 0 ? (
+                <p className="p-3 font-body-sm text-on-surface-variant">No users match your search.</p>
+              ) : (
+                userOptions.map((u) => (
+                  <label
+                    key={u.id}
+                    className="flex cursor-pointer items-start gap-3 border-b border-outline-variant px-3 py-2 last:border-b-0 hover:bg-surface-variant"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={!!selectedUsers[u.id]}
+                      onChange={() => toggleUser(u)}
+                      className="mt-1"
+                    />
+                    <span>
+                      <span className="block font-body-sm">{u.display_name ?? u.email}</span>
+                      <span className="block text-[11px] text-outline">{u.email}</span>
+                    </span>
+                  </label>
+                ))
+              )}
+            </div>
+            {selectedCount > 0 && (
+              <p className="mt-2 font-body-sm text-on-surface-variant">
+                {selectedCount} selected
+                {selectedCount > 100 ? " — max 100 per send" : ""}
+              </p>
+            )}
+            {selectedCount > 0 && selectedCount <= 6 && (
+              <p className="mt-1 font-body-sm text-[12px] text-outline">
+                {selectedList.map((u) => u.email).join(", ")}
+              </p>
+            )}
+          </div>
+        )}
+
+        {(target === "all" || target === "creators") && (
           <label className="mb-4 flex items-start gap-2 rounded-lg border border-yellow-700/40 bg-yellow-50 p-3 dark:bg-yellow-950/30">
             <input
               type="checkbox"
@@ -268,12 +370,19 @@ function AdminEmailInner() {
             !subject.trim() ||
             !body.trim() ||
             (target === "user" && !userId) ||
-            (target !== "user" && !confirmBroadcast)
+            (target === "selected" && (selectedCount === 0 || selectedCount > 100)) ||
+            ((target === "all" || target === "creators") && !confirmBroadcast)
           }
           onClick={send}
           className="btn-primary px-5 py-2.5 disabled:opacity-50"
         >
-          {busy ? "Sending…" : target === "user" ? "Send email" : `Send to ${broadcastTarget} recipients`}
+          {busy
+            ? "Sending…"
+            : target === "user"
+              ? "Send email"
+              : target === "selected"
+                ? `Send to ${selectedCount} selected`
+                : `Send to ${broadcastTarget} recipients`}
         </button>
         <button
           type="button"

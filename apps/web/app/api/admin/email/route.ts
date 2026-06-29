@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { requireAdmin, errorResponse, HttpError } from "@/lib/session";
-import { getUserById, listUsersForEmail, recordAdminEvent } from "@/lib/store";
+import { getUserById, getUsersByIds, listUsersForEmail, recordAdminEvent } from "@/lib/store";
 import { emailProviderStatus, sendAdminBroadcast, sendAdminMessage } from "@/lib/email";
 import { envLimit, rateLimit, rateLimitResponse } from "@/lib/rate-limit";
 import type { UserRole } from "@/lib/types";
@@ -11,11 +11,22 @@ export const dynamic = "force-dynamic";
 const MAX_SUBJECT = 200;
 const MAX_BODY = 10_000;
 
-type EmailTarget = "user" | "all" | "creators";
+const MAX_SELECTED = 100;
+
+type EmailTarget = "user" | "selected" | "all" | "creators";
 
 function parseTarget(raw: unknown): EmailTarget {
-  if (raw === "user" || raw === "all" || raw === "creators") return raw;
-  throw new HttpError(400, "bad_target", "target must be user, all, or creators.");
+  if (raw === "user" || raw === "selected" || raw === "all" || raw === "creators") return raw;
+  throw new HttpError(400, "bad_target", "target must be user, selected, all, or creators.");
+}
+
+function parseUserIds(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  const ids = raw
+    .filter((id): id is string => typeof id === "string")
+    .map((id) => id.trim())
+    .filter(Boolean);
+  return [...new Set(ids)];
 }
 
 function validateContent(subject: unknown, body: unknown): { subject: string; body: string } {
@@ -31,8 +42,9 @@ function validateContent(subject: unknown, body: unknown): { subject: string; bo
 /**
  * POST /api/admin/email — send a custom email to one user or a broadcast segment.
  *
- * Body: { target: "user"|"all"|"creators", userId?, subject, body, confirmBroadcast? }
+ * Body: { target, userId?, userIds?, subject, body, confirmBroadcast? }
  * Broadcasts (all/creators) require confirmBroadcast: true.
+ * Selected sends pass userIds (max 100).
  */
 export async function POST(req: NextRequest) {
   try {
@@ -47,6 +59,7 @@ export async function POST(req: NextRequest) {
     const payload = (await req.json().catch(() => ({}))) as {
       target?: unknown;
       userId?: unknown;
+      userIds?: unknown;
       subject?: unknown;
       body?: unknown;
       confirmBroadcast?: unknown;
@@ -98,6 +111,63 @@ export async function POST(req: NextRequest) {
       return Response.json({ ok: true, sent: 1, failed: 0, total: 1, resendId: result.id });
     }
 
+    if (target === "selected") {
+      const userIds = parseUserIds(payload.userIds);
+      if (userIds.length === 0) {
+        throw new HttpError(400, "missing_users", "Select at least one user.");
+      }
+      if (userIds.length > MAX_SELECTED) {
+        throw new HttpError(400, "too_many_users", `Select at most ${MAX_SELECTED} users per send.`);
+      }
+
+      const users = await getUsersByIds(userIds);
+      const recipients = users
+        .filter((u) => u.email?.trim() && !u.suspended)
+        .map((u) => ({
+          email: u.email,
+          name: u.name,
+          display_name: u.display_name,
+          handle: u.handle,
+        }));
+
+      if (recipients.length === 0) {
+        throw new HttpError(400, "no_recipients", "No selected users have a deliverable email.");
+      }
+
+      const { sent, failed, errors, errorSummary } = await sendAdminBroadcast(recipients, subject, body);
+
+      await recordAdminEvent({
+        eventType: "ADMIN_EMAIL",
+        actorId: admin.id,
+        metadata: {
+          target: "selected",
+          userIds,
+          total: recipients.length,
+          sent,
+          failed,
+          subject,
+          errorSummary: errorSummary ?? null,
+          errors: errors.length ? errors : null,
+        },
+      });
+
+      const allSent = sent === recipients.length && failed === 0;
+      return Response.json({
+        ok: allSent,
+        sent,
+        failed: failed || Math.max(0, recipients.length - sent),
+        total: recipients.length,
+        errorSummary,
+        errors: errors.length ? errors : undefined,
+        message: allSent
+          ? undefined
+          : errorSummary ??
+            (sent > 0
+              ? `Only ${sent} of ${recipients.length} emails were accepted.`
+              : "Send failed — check Resend logs."),
+      });
+    }
+
     if (payload.confirmBroadcast !== true) {
       throw new HttpError(
         400,
@@ -137,17 +207,20 @@ export async function POST(req: NextRequest) {
       },
     });
 
+    const allSent = sent === recipients.length && failed === 0;
     return Response.json({
-      ok: failed === 0,
+      ok: allSent,
       sent,
-      failed,
+      failed: failed || Math.max(0, recipients.length - sent),
       total: recipients.length,
       errorSummary,
       errors: errors.length ? errors : undefined,
-      message:
-        failed > 0
-          ? errorSummary ?? "Some emails failed — check Resend logs and domain verification."
-          : undefined,
+      message: allSent
+        ? undefined
+        : errorSummary ??
+          (sent > 0
+            ? `Only ${sent} of ${recipients.length} emails were accepted.`
+            : "Broadcast failed — check Resend logs and domain verification."),
     });
   } catch (e) {
     return errorResponse(e);

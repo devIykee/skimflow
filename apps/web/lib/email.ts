@@ -433,6 +433,26 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function resendErrorMessage(error: unknown): string {
+  if (!error || typeof error !== "object") return "batch_send_failed";
+  const e = error as { message?: string; name?: string };
+  return e.message ?? e.name ?? "batch_send_failed";
+}
+
+/** Resend batch success payload is `{ data: { id }[] }`; the SDK wraps that in `.data`. */
+function batchResultIds(data: unknown): string[] {
+  if (!data) return [];
+  if (Array.isArray(data)) {
+    return data.map((row) => (row as { id?: string })?.id).filter((id): id is string => !!id);
+  }
+  if (typeof data === "object" && Array.isArray((data as { data?: unknown }).data)) {
+    return ((data as { data: Array<{ id?: string }> }).data ?? [])
+      .map((row) => row.id)
+      .filter((id): id is string => !!id);
+  }
+  return [];
+}
+
 /**
  * Broadcast admin messages via Resend's batch API (1 HTTP request per ≤100 recipients).
  * Avoids the 10-requests/second limit that parallel single sends hit.
@@ -469,12 +489,19 @@ export async function sendAdminBroadcast(
     while (!done && attempt < 2) {
       attempt++;
       const { data, error } = await client.batch.send(payloads);
-      if (!error && data) {
-        sent += data.length;
+      const ids = batchResultIds(data);
+      if (!error && ids.length > 0) {
+        sent += ids.length;
+        if (ids.length < chunk.length) {
+          const shortfall = chunk.length - ids.length;
+          failed += shortfall;
+          const reason = "batch returned fewer ids than recipients";
+          errorCounts.set(reason, (errorCounts.get(reason) ?? 0) + shortfall);
+        }
         done = true;
         continue;
       }
-      const reason = error?.message ?? "batch_send_failed";
+      const reason = error ? resendErrorMessage(error) : "batch returned no message ids";
       const isRateLimit = /too many requests/i.test(reason);
       if (isRateLimit && attempt < 2) {
         await sleep(RATE_LIMIT_PAUSE_MS);
