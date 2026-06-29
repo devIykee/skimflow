@@ -248,57 +248,75 @@ export default function ForYouPage() {
           c.contentType === "book" ? (
             <BookCard key={c.id} c={c} />
           ) : (
-          <Link
+          <article
             key={c.id}
-            href={c.url}
             className="card group flex flex-col text-left transition-all hover:-translate-y-0.5 hover:shadow-md"
           >
-            <div className="mb-2 flex items-center justify-between gap-2">
-              <span className="pill">{TYPE_LABEL[c.contentType] ?? c.contentType}</span>
-              <div className="flex items-center gap-2">
-                {c.ownershipVerified && (
-                  <span
-                    className="flex items-center gap-0.5 font-label-caps text-label-caps text-secondary"
-                    title={`Ownership of the original ${c.sourcePlatform ?? "source"} verified`}
-                  >
-                    <span className="material-symbols-outlined text-[14px]">verified</span>source
-                  </span>
-                )}
-                {c.agentUrl && (
-                  <span className="font-data-mono text-[11px] text-primary" title="Agent-readable endpoint">
-                    agent-ready
-                  </span>
-                )}
-                {c.creatorVerified && (
-                  <span className="flex items-center gap-0.5 font-label-caps text-label-caps text-secondary">
-                    <span className="material-symbols-outlined text-[14px]">verified</span>verified
-                  </span>
-                )}
+            {/* Body links to the post; the author row (below) links to the profile. */}
+            <Link href={c.url} className="flex flex-1 flex-col text-left">
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <span className="pill">{TYPE_LABEL[c.contentType] ?? c.contentType}</span>
+                <div className="flex items-center gap-2">
+                  {c.ownershipVerified && (
+                    <span
+                      className="flex items-center gap-0.5 font-label-caps text-label-caps text-secondary"
+                      title={`Ownership of the original ${c.sourcePlatform ?? "source"} verified`}
+                    >
+                      <span className="material-symbols-outlined text-[14px]">verified</span>source
+                    </span>
+                  )}
+                  {c.agentUrl && (
+                    <span className="font-data-mono text-[11px] text-primary" title="Agent-readable endpoint">
+                      agent-ready
+                    </span>
+                  )}
+                  {c.creatorVerified && (
+                    <span className="flex items-center gap-0.5 font-label-caps text-label-caps text-secondary">
+                      <span className="material-symbols-outlined text-[14px]">verified</span>verified
+                    </span>
+                  )}
+                </div>
               </div>
-            </div>
 
-            <h3 className="mb-2 font-headline-sm text-headline-sm leading-tight group-hover:text-primary">
-              {c.title}
-            </h3>
-            {c.excerpt ? (
-              <p
-                className="mb-4 flex-grow font-body-sm text-body-sm text-on-surface-variant [&_mark]:bg-primary/15 [&_mark]:text-on-surface"
-                dangerouslySetInnerHTML={{ __html: c.excerpt }}
-              />
-            ) : (
-              <p className="mb-4 line-clamp-3 flex-grow font-body-sm text-body-sm text-on-surface-variant">{c.summary}</p>
-            )}
+              <h3 className="mb-2 font-headline-sm text-headline-sm leading-tight group-hover:text-primary">
+                {c.title}
+              </h3>
+              {c.excerpt ? (
+                <p
+                  className="mb-4 flex-grow font-body-sm text-body-sm text-on-surface-variant [&_mark]:bg-primary/15 [&_mark]:text-on-surface"
+                  dangerouslySetInnerHTML={{ __html: c.excerpt }}
+                />
+              ) : (
+                <p className="mb-4 line-clamp-3 flex-grow font-body-sm text-body-sm text-on-surface-variant">{c.summary}</p>
+              )}
+            </Link>
 
             <div className="mt-auto flex items-center justify-between gap-2 border-t border-outline-variant/60 pt-3">
-              <div className="flex min-w-0 items-center gap-2">
-                <Avatar name={c.creatorName ?? c.creatorHandle} src={c.creatorAvatar} />
-                <span className="flex min-w-0 flex-col leading-tight">
-                  {c.creatorName && (
-                    <span className="truncate font-body-sm text-[12px] text-on-surface">{c.creatorName}</span>
-                  )}
-                  <span className="truncate font-data-mono text-[11px] text-outline">@{c.creatorHandle ?? "unknown"}</span>
-                </span>
-              </div>
+              {c.creatorHandle ? (
+                <Link
+                  href={`/creator/${c.creatorHandle}`}
+                  className="flex min-w-0 items-center gap-2 hover:opacity-90"
+                  title={`View ${c.creatorName ?? `@${c.creatorHandle}`}'s profile`}
+                >
+                  <Avatar name={c.creatorName ?? c.creatorHandle} src={c.creatorAvatar} />
+                  <span className="flex min-w-0 flex-col leading-tight">
+                    {c.creatorName && (
+                      <span className="truncate font-body-sm text-[12px] text-on-surface">{c.creatorName}</span>
+                    )}
+                    <span className="truncate font-data-mono text-[11px] text-outline hover:text-primary">@{c.creatorHandle}</span>
+                  </span>
+                </Link>
+              ) : (
+                <div className="flex min-w-0 items-center gap-2">
+                  <Avatar name={c.creatorName ?? c.creatorHandle} src={c.creatorAvatar} />
+                  <span className="flex min-w-0 flex-col leading-tight">
+                    {c.creatorName && (
+                      <span className="truncate font-body-sm text-[12px] text-on-surface">{c.creatorName}</span>
+                    )}
+                    <span className="truncate font-data-mono text-[11px] text-outline">@unknown</span>
+                  </span>
+                </div>
+              )}
               <div className="flex items-center gap-2 font-data-mono text-[12px]">
                 {c.contentType === "agent-skills" && (
                   <ShareAgentButton slug={c.slug} title={c.title} pricePerBlock={c.pricePerBlock} variant="card" />
@@ -309,7 +327,7 @@ export default function ForYouPage() {
                 <span className="rounded-full bg-secondary/10 px-2 py-0.5 text-secondary">{formatUsdc(c.pricePerBlock)} USDC</span>
               </div>
             </div>
-          </Link>
+          </article>
           )
         )}
       </div>

@@ -73,12 +73,19 @@ export default async function ReaderPage({ params }: { params: Promise<{ slug: s
   void incrementView(content.id);
   const chunks = await getChunks(content.id);
 
-  // The creator (and admins) read their own piece in full, free — so we hand the
-  // client every block's text up front and tell it to skip the paywall entirely.
+  // The creator (and admins) read in full, free — so we hand the client every
+  // block's text up front and skip the paywall. We keep two distinct flags:
+  //   • isAuthor — viewer actually wrote this piece (gets the "your piece / edit"
+  //     affordance).
+  //   • isOwner  — viewer reads it free (author OR admin). Admins get free access
+  //     to ALL pieces, but they are NOT the author, so they must not see the
+  //     "this is your piece" banner or the edit link.
   const viewer = await currentSession();
   let isOwner = false;
+  let isAuthor = false;
   if (viewer?.user?.id) {
-    isOwner = content.creator_id === viewer.user.id;
+    isAuthor = content.creator_id === viewer.user.id;
+    isOwner = isAuthor;
     if (!isOwner) {
       const vu = await getUserById(viewer.user.id);
       isOwner = vu?.role === "admin";
@@ -147,6 +154,7 @@ export default async function ReaderPage({ params }: { params: Promise<{ slug: s
         contentType={content.content_type}
         pricePerBlock={content.price_per_block}
         isOwner={isOwner}
+        isAuthor={isAuthor}
         contentId={content.id}
         verifiedSource={content.ownership_verified ? (content.source_platform ?? "source") : null}
         agentUrl={content.content_type === "agent-skills" ? `/read/${content.slug}/agent-skills.md` : null}

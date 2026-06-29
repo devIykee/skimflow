@@ -72,9 +72,12 @@ interface Props {
   pricePerBlock: string;
   agentUrl: string | null;
   verifiedSource?: string | null;
-  /** The viewer is this piece's creator (or an admin): read in full, free, with
-   *  an Edit link and no paywall chrome. */
+  /** The viewer reads this piece in full, free (its author OR an admin): every
+   *  block is handed over and the paywall chrome is hidden. */
   isOwner?: boolean;
+  /** The viewer actually wrote this piece. Authors get the "your piece / edit"
+   *  banner; admins (isOwner but not isAuthor) do not. */
+  isAuthor?: boolean;
   /** Content id — used to deep-link the owner straight into the editor. */
   contentId?: string;
   chunks: ChunkView[];
@@ -84,6 +87,7 @@ export default function ChunkReader(props: Props) {
   const { slug, title, summary, creatorHandle, pricePerBlock, chunks, agentUrl } = props;
   const isPicture = props.contentType === "picture";
   const isOwner = props.isOwner ?? false;
+  const isAuthor = props.isAuthor ?? false;
   const storageKey = `skimflow_reader_${slug}`;
   // Reading-progress save point — the top-most block the reader had reached, so
   // we can drop them back there on return instead of at the top.
@@ -656,7 +660,16 @@ export default function ChunkReader(props: Props) {
         {agentUrl && <ShareAgentButton slug={slug} title={title} pricePerBlock={pricePerBlock} variant="detail" />}
       </div>
       <h1 className="font-display-lg text-display-lg-mobile">{title}</h1>
-      <p className="mb-2 font-body-md text-on-surface-variant">by @{creatorHandle ?? "unknown"}</p>
+      <p className="mb-2 font-body-md text-on-surface-variant">
+        by{" "}
+        {creatorHandle ? (
+          <Link href={`/creator/${creatorHandle}`} className="font-semibold text-on-surface hover:text-primary hover:underline">
+            @{creatorHandle}
+          </Link>
+        ) : (
+          "@unknown"
+        )}
+      </p>
 
       {/* Progress — the reading-fuel % sits inline here (tap to expand the pill). */}
       <div className="mb-6 flex items-center gap-2 font-body-sm text-on-surface-variant">
@@ -672,8 +685,8 @@ export default function ChunkReader(props: Props) {
 
       {summary && <p className="mb-6 border-l-4 border-outline-variant pl-4 font-body-lg text-on-surface-variant">{summary}</p>}
 
-      {/* Owner view: this is your work — read it free, jump to the editor. */}
-      {isOwner && (
+      {/* Author view: this is your work — read it free, jump to the editor. */}
+      {isAuthor && (
         <div className="mb-8 flex items-center justify-between gap-3 rounded-xl border border-secondary/30 bg-secondary/5 px-4 py-3 font-body-sm text-secondary">
           <span className="inline-flex items-center gap-2">
             <span className="material-symbols-outlined text-[18px]">edit_note</span>
@@ -685,6 +698,14 @@ export default function ChunkReader(props: Props) {
           >
             Edit in dashboard →
           </Link>
+        </div>
+      )}
+
+      {/* Admin view: free access to everyone's pieces, but it isn't yours. */}
+      {isOwner && !isAuthor && (
+        <div className="mb-8 inline-flex items-center gap-2 rounded-xl border border-outline-variant bg-surface-container-lowest px-4 py-3 font-body-sm text-on-surface-variant">
+          <span className="material-symbols-outlined text-[18px]">shield_person</span>
+          Admin access — every block is unlocked for you.
         </div>
       )}
 
