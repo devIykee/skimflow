@@ -101,6 +101,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                   header, independent of the logo and right-control widths. */}
               <div className="absolute left-1/2 hidden -translate-x-1/2 items-center gap-stack-lg md:flex">
                 <NavLink href="/for-you">For You</NavLink>
+                {authed && <NavLink href="/following">Following</NavLink>}
                 <NavLink href="/docs">Docs</NavLink>
               </div>
               <div className="flex items-center gap-stack-md">
