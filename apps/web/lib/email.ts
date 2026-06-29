@@ -22,6 +22,21 @@ function getFromEmail(): string | undefined {
   return process.env.RESEND_FROM_EMAIL?.trim() || undefined;
 }
 
+/** Resend `from` — display name + verified address. */
+function formatFrom(): string | undefined {
+  const addr = getFromEmail();
+  if (!addr) return undefined;
+  if (/^[^<]+<.+>$/.test(addr)) return addr;
+  return `Skimflow <${addr}>`;
+}
+
+export function emailProviderStatus(): { configured: boolean; from?: string; missing: string[] } {
+  const missing: string[] = [];
+  if (!getApiKey()) missing.push("RESEND_API_KEY");
+  if (!getFromEmail()) missing.push("RESEND_FROM_EMAIL");
+  return { configured: missing.length === 0, from: getFromEmail(), missing };
+}
+
 function warnMissingProvider(): void {
   if (warnedNoProvider) return;
   warnedNoProvider = true;
@@ -125,11 +140,12 @@ function bodyToHtml(body: string): string {
 
 /** Wraps Resend send — logs success/failure, never throws. */
 export async function sendEmail(opts: SendOpts): Promise<SendEmailResult> {
-  const from = getFromEmail();
+  const from = formatFrom();
   const key = getApiKey();
   if (!key || !from) {
     warnMissingProvider();
-    return { ok: false, error: "email_provider_not_configured" };
+    const missing = emailProviderStatus().missing.join(", ") || "RESEND_API_KEY, RESEND_FROM_EMAIL";
+    return { ok: false, error: `Email not configured in this environment (missing: ${missing})` };
   }
 
   try {

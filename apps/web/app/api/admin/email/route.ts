@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { requireAdmin, errorResponse, HttpError } from "@/lib/session";
 import { getUserById, listUsersForEmail, recordAdminEvent } from "@/lib/store";
-import { sendAdminMessage } from "@/lib/email";
+import { emailProviderStatus, sendAdminMessage } from "@/lib/email";
 import { envLimit, rateLimit, rateLimitResponse } from "@/lib/rate-limit";
 import type { UserRole } from "@/lib/types";
 
@@ -33,10 +33,11 @@ async function sendBatch(
   recipients: Array<{ id: string; email: string; display_name: string | null; name: string | null }>,
   subject: string,
   body: string
-): Promise<{ sent: number; failed: number; errors: string[] }> {
+): Promise<{ sent: number; failed: number; errors: string[]; errorSummary?: string }> {
   let sent = 0;
   let failed = 0;
   const errors: string[] = [];
+  const errorCounts = new Map<string, number>();
 
   for (let i = 0; i < recipients.length; i += BROADCAST_BATCH) {
     const batch = recipients.slice(i, i + BROADCAST_BATCH);
@@ -54,12 +55,20 @@ async function sendBatch(
       if (results[j].ok) sent++;
       else {
         failed++;
-        if (errors.length < 5) errors.push(`${batch[j].email}: ${results[j].error ?? "failed"}`);
+        const reason = results[j].error ?? "failed";
+        errorCounts.set(reason, (errorCounts.get(reason) ?? 0) + 1);
+        if (errors.length < 5) errors.push(`${batch[j].email}: ${reason}`);
       }
     }
   }
 
-  return { sent, failed, errors };
+  const topError = [...errorCounts.entries()].sort((a, b) => b[1] - a[1])[0];
+  return {
+    sent,
+    failed,
+    errors,
+    errorSummary: topError ? `${topError[1]}× ${topError[0]}` : undefined,
+  };
 }
 
 /**
@@ -142,7 +151,7 @@ export async function POST(req: NextRequest) {
       return Response.json({ ok: true, sent: 0, failed: 0, total: 0, message: "No recipients matched." });
     }
 
-    const { sent, failed, errors } = await sendBatch(recipients, subject, body);
+    const { sent, failed, errors, errorSummary } = await sendBatch(recipients, subject, body);
 
     await recordAdminEvent({
       eventType: "ADMIN_EMAIL",
@@ -153,6 +162,7 @@ export async function POST(req: NextRequest) {
         sent,
         failed,
         subject,
+        errorSummary: errorSummary ?? null,
         errors: errors.length ? errors : null,
       },
     });
@@ -162,24 +172,69 @@ export async function POST(req: NextRequest) {
       sent,
       failed,
       total: recipients.length,
+      errorSummary,
       errors: errors.length ? errors : undefined,
+      message:
+        failed > 0
+          ? errorSummary ?? "Some emails failed — check Resend logs and domain verification."
+          : undefined,
     });
   } catch (e) {
     return errorResponse(e);
   }
 }
 
-/** GET /api/admin/email — recipient counts for the compose UI. */
+/** GET /api/admin/email — recipient counts + Resend config status for the compose UI. */
 export async function GET() {
   try {
-    await requireAdmin();
+    const admin = await requireAdmin();
     const [all, creators] = await Promise.all([
       listUsersForEmail(),
       listUsersForEmail("creator"),
     ]);
+    const provider = emailProviderStatus();
     return Response.json({
       counts: { all: all.length, creators: creators.length },
+      provider,
+      adminEmail: admin.email,
     });
+  } catch (e) {
+    return errorResponse(e);
+  }
+}
+
+/**
+ * PUT /api/admin/email — send a test message to the logged-in admin only.
+ * Use this to verify Resend works in production before broadcasting.
+ */
+export async function PUT(req: NextRequest) {
+  try {
+    const admin = await requireAdmin();
+    const payload = (await req.json().catch(() => ({}))) as { subject?: unknown; body?: unknown };
+    const { subject, body } = validateContent(
+      payload.subject ?? "Skimflow test email",
+      payload.body ?? "If you received this, Resend is working in this environment."
+    );
+
+    const result = await sendAdminMessage({
+      to: admin.email,
+      name: admin.display_name ?? admin.name ?? undefined,
+      subject: `[Test] ${subject}`,
+      body,
+    });
+
+    if (!result.ok) {
+      return Response.json(
+        {
+          ok: false,
+          error: "send_failed",
+          message: result.error ?? "Test email failed.",
+          provider: emailProviderStatus(),
+        },
+        { status: 502 }
+      );
+    }
+    return Response.json({ ok: true, resendId: result.id, sentTo: admin.email });
   } catch (e) {
     return errorResponse(e);
   }

@@ -20,17 +20,24 @@ function AdminEmailInner() {
   const [userSearch, setUserSearch] = useState("");
   const [userOptions, setUserOptions] = useState<UserRow[]>([]);
   const [counts, setCounts] = useState({ all: 0, creators: 0 });
+  const [provider, setProvider] = useState<{ configured: boolean; from?: string; missing: string[] } | null>(null);
+  const [adminEmail, setAdminEmail] = useState<string | null>(null);
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
   const [confirmBroadcast, setConfirmBroadcast] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [errDetails, setErrDetails] = useState<string[]>([]);
 
   useEffect(() => {
     fetch("/api/admin/email", { credentials: "include" })
       .then((r) => r.json())
-      .then((d) => setCounts(d.counts ?? { all: 0, creators: 0 }))
+      .then((d) => {
+        setCounts(d.counts ?? { all: 0, creators: 0 });
+        setProvider(d.provider ?? null);
+        setAdminEmail(d.adminEmail ?? null);
+      })
       .catch(() => {});
   }, []);
 
@@ -61,10 +68,42 @@ function AdminEmailInner() {
     if (prefillUserId) setUserId(prefillUserId);
   }, [prefillUserId]);
 
+  async function sendTest() {
+    setBusy(true);
+    setMsg(null);
+    setErr(null);
+    setErrDetails([]);
+    try {
+      const r = await fetch("/api/admin/email", {
+        method: "PUT",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          subject: subject.trim() || "Skimflow test",
+          body: body.trim() || "If you received this, Resend is working in production.",
+        }),
+      });
+      const d = await r.json();
+      if (!r.ok) {
+        setErr(d.message ?? d.error ?? "Test send failed.");
+        if (d.provider?.missing?.length) {
+          setErrDetails([`Missing env: ${d.provider.missing.join(", ")}`]);
+        }
+        return;
+      }
+      setMsg(`Test email sent to ${d.sentTo}.`);
+    } catch {
+      setErr("Network error.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function send() {
     setBusy(true);
     setMsg(null);
     setErr(null);
+    setErrDetails([]);
     try {
       const payload: Record<string, unknown> = { target, subject, body };
       if (target === "user") payload.userId = userId;
@@ -79,12 +118,16 @@ function AdminEmailInner() {
       const d = await r.json();
       if (!r.ok) {
         setErr(d.message ?? d.error ?? "Send failed.");
+        if (Array.isArray(d.errors)) setErrDetails(d.errors);
         return;
       }
       if (target === "user") {
         setMsg("Email sent.");
+      } else if (d.failed > 0) {
+        setErr(d.message ?? d.errorSummary ?? `All ${d.failed} sends failed.`);
+        if (Array.isArray(d.errors)) setErrDetails(d.errors);
       } else {
-        setMsg(`Sent ${d.sent ?? 0} of ${d.total ?? 0}${d.failed ? ` (${d.failed} failed)` : ""}.`);
+        setMsg(`Sent ${d.sent ?? 0} of ${d.total ?? 0}.`);
       }
       if (target !== "user") setConfirmBroadcast(false);
     } catch {
@@ -200,9 +243,24 @@ function AdminEmailInner() {
           </p>
         </div>
 
-        {err && <p className="mb-3 font-body-sm text-red-600">{err}</p>}
+        {provider && !provider.configured && (
+          <p className="mb-4 rounded-lg border border-red-300 bg-red-50 p-3 font-body-sm text-red-800 dark:bg-red-950/40 dark:text-red-200">
+            Resend is not configured in this environment. Set{" "}
+            <strong>{provider.missing.join(", ")}</strong> in Vercel → Settings → Environment Variables, then redeploy.
+          </p>
+        )}
+
+        {err && <p className="mb-2 font-body-sm text-red-600">{err}</p>}
+        {errDetails.length > 0 && (
+          <ul className="mb-3 list-inside list-disc font-body-sm text-[12px] text-red-600">
+            {errDetails.map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+          </ul>
+        )}
         {msg && <p className="mb-3 font-body-sm text-green-700 dark:text-green-400">{msg}</p>}
 
+        <div className="flex flex-wrap gap-3">
         <button
           type="button"
           disabled={
@@ -217,16 +275,23 @@ function AdminEmailInner() {
         >
           {busy ? "Sending…" : target === "user" ? "Send email" : `Send to ${broadcastTarget} recipients`}
         </button>
+        <button
+          type="button"
+          disabled={busy || !adminEmail}
+          onClick={sendTest}
+          className="btn-outline px-5 py-2.5 disabled:opacity-50"
+        >
+          Send test to me
+        </button>
+        </div>
       </div>
 
       <div className="card h-fit">
-        <h3 className="mb-3 font-label-lg text-label-lg">Quick actions</h3>
-        <p className="mb-4 font-body-sm text-on-surface-variant">
-          Resend the automated welcome email from the Users tab, or use this form for custom announcements.
-        </p>
+        <h3 className="mb-3 font-label-lg text-label-lg">Production checklist</h3>
         <ul className="space-y-2 font-body-sm text-body-sm text-on-surface-variant">
-          <li>· Welcome emails also send automatically on signup</li>
-          <li>· Payout emails send when transfers confirm</li>
+          <li>· <strong>Send test to me</strong> first — uses your real inbox, not Resend&apos;s sandbox address</li>
+          <li>· Verify your domain in Resend → Domains (must match <code className="rounded bg-surface-variant px-1">{provider?.from ?? "RESEND_FROM_EMAIL"}</code> exactly)</li>
+          <li>· Set <code className="rounded bg-surface-variant px-1">RESEND_API_KEY</code> and <code className="rounded bg-surface-variant px-1">RESEND_FROM_EMAIL</code> in Vercel, then redeploy</li>
           <li>· Broadcasts skip suspended accounts</li>
         </ul>
       </div>
