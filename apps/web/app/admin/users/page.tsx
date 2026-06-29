@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
 interface Row {
@@ -62,6 +63,20 @@ export default function UsersPage() {
     }
   }
 
+  async function resendWelcome(id: string, email: string) {
+    if (!confirm(`Resend welcome email to ${email}?`)) return;
+    setBusy(id);
+    try {
+      const r = await fetch(`/api/admin/users/${id}/resend-welcome`, { method: "POST", credentials: "include" });
+      if (!r.ok) {
+        const d = await r.json().catch(() => ({}));
+        alert(d.message ?? "Failed to send welcome email.");
+      }
+    } finally {
+      setBusy(null);
+    }
+  }
+
   return (
     <div className="card">
       <div className="mb-4 flex flex-wrap gap-3">
@@ -101,6 +116,8 @@ export default function UsersPage() {
                   {u.role !== "admin" && (
                     <button disabled={busy === u.id} onClick={() => act(u.id, "grant-admin")} className="btn-outline px-2 py-1 text-[11px]">Grant Admin</button>
                   )}
+                  <Link href={`/admin/email?userId=${u.id}`} className="btn-outline px-2 py-1 text-[11px]">Email</Link>
+                  <button disabled={busy === u.id} onClick={() => resendWelcome(u.id, u.email)} className="btn-outline px-2 py-1 text-[11px]">Resend welcome</button>
                   <button disabled={busy === u.id} onClick={() => impersonate(u.id)} className="btn-outline px-2 py-1 text-[11px]">Impersonate</button>
                 </td>
               </tr>

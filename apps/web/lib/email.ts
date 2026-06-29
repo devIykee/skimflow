@@ -1,14 +1,83 @@
 /**
- * Transactional email. Resend is the default provider; Postmark is the
- * fallback (used when RESEND_API_KEY is absent but POSTMARK_API_KEY is set).
- * Both are called over their REST APIs via fetch — no SDK dependency.
+ * Transactional email via Resend. All sends go through sendEmail() — never throw
+ * into callers; failures are logged only.
  *
- * EVERY send is fire-and-forget: `dispatch()` schedules the request and returns
- * immediately, so a payment response is NEVER blocked on email delivery. Errors
- * are logged, never thrown into the caller.
- *
- * Required env: EMAIL_FROM, and one of RESEND_API_KEY / POSTMARK_API_KEY.
+ * Required env: RESEND_API_KEY, RESEND_FROM_EMAIL.
+ * Links use NEXT_PUBLIC_APP_URL.
  */
+import { Resend } from "resend";
+
+const ACCENT = "#FF9B73";
+const BG = "#0a0a0a";
+const TEXT = "#ffffff";
+const MUTED = "#a1a1aa";
+
+let warnedNoProvider = false;
+
+function getApiKey(): string | undefined {
+  return process.env.RESEND_API_KEY?.trim() || undefined;
+}
+
+function getFromEmail(): string | undefined {
+  return process.env.RESEND_FROM_EMAIL?.trim() || undefined;
+}
+
+function warnMissingProvider(): void {
+  if (warnedNoProvider) return;
+  warnedNoProvider = true;
+  if (!getApiKey()) {
+    console.warn("⚠️ RESEND_API_KEY not set — skipping all email sends.");
+  } else if (!getFromEmail()) {
+    console.warn("⚠️ RESEND_FROM_EMAIL not set — skipping all email sends.");
+  }
+}
+
+/** Configured Resend client (null when RESEND_API_KEY is absent). */
+export const resend: Resend | null = getApiKey() ? new Resend(getApiKey()!) : null;
+
+function appUrl(): string {
+  return (process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000").replace(/\/$/, "");
+}
+
+function firstName(name: string): string {
+  const trimmed = name.trim();
+  if (!trimmed) return "there";
+  return trimmed.split(/\s+/)[0] ?? trimmed;
+}
+
+function truncateAddr(addr: string): string {
+  if (addr.length <= 16) return addr;
+  return `${addr.slice(0, 8)}…${addr.slice(-6)}`;
+}
+
+function emailShell(body: string): string {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/></head>
+<body style="margin:0;padding:32px 16px;background:${BG};font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;">
+  <div style="max-width:600px;margin:0 auto;color:${TEXT};">
+    ${body}
+  </div>
+</body>
+</html>`;
+}
+
+function ctaButton(href: string, label: string): string {
+  return `<p style="margin:28px 0 0;">
+    <a href="${href}" style="display:inline-block;background:${ACCENT};color:#0a0a0a;font-weight:600;text-decoration:none;padding:12px 24px;border-radius:8px;font-size:15px;">${label}</a>
+  </p>`;
+}
+
+function footer(text: string): string {
+  return `<p style="margin:32px 0 0;padding-top:24px;border-top:1px solid #27272a;color:${MUTED};font-size:12px;line-height:1.5;">${text}</p>`;
+}
+
+export interface SendEmailResult {
+  ok: boolean;
+  id?: string;
+  error?: string;
+}
+
 interface SendOpts {
   to: string;
   subject: string;
@@ -16,225 +85,131 @@ interface SendOpts {
   text?: string;
 }
 
-let warnedNoProvider = false;
+function escapeHtml(raw: string): string {
+  return raw
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
 
-async function sendNow(opts: SendOpts): Promise<void> {
-  const from = process.env.EMAIL_FROM;
-  if (!from) {
-    if (!warnedNoProvider) {
-      console.warn("⚠️ EMAIL_FROM not set — skipping email delivery.");
-      warnedNoProvider = true;
-    }
-    return;
+function bodyToHtml(body: string): string {
+  return escapeHtml(body).replace(/\n/g, "<br/>");
+}
+
+/** Wraps Resend send — logs success/failure, never throws. */
+export async function sendEmail(opts: SendOpts): Promise<SendEmailResult> {
+  const from = getFromEmail();
+  const key = getApiKey();
+  if (!key || !from) {
+    warnMissingProvider();
+    return { ok: false, error: "email_provider_not_configured" };
   }
 
-  const resendKey = process.env.RESEND_API_KEY;
-  const postmarkKey = process.env.POSTMARK_API_KEY;
-
-  if (resendKey) {
-    const res = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${resendKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        from,
-        to: opts.to,
-        subject: opts.subject,
-        html: opts.html,
-        text: opts.text,
-      }),
+  try {
+    const client = resend ?? new Resend(key);
+    const { data, error } = await client.emails.send({
+      from,
+      to: opts.to,
+      subject: opts.subject,
+      html: opts.html,
+      text: opts.text,
     });
-    if (!res.ok) throw new Error(`resend ${res.status}: ${await res.text()}`);
-    return;
-  }
-
-  if (postmarkKey) {
-    const res = await fetch("https://api.postmarkapp.com/email", {
-      method: "POST",
-      headers: {
-        "X-Postmark-Server-Token": postmarkKey,
-        "Content-Type": "application/json",
-        Accept: "application/json",
-      },
-      body: JSON.stringify({
-        From: from,
-        To: opts.to,
-        Subject: opts.subject,
-        HtmlBody: opts.html,
-        TextBody: opts.text ?? opts.html.replace(/<[^>]+>/g, ""),
-        MessageStream: "outbound",
-      }),
-    });
-    if (!res.ok) throw new Error(`postmark ${res.status}: ${await res.text()}`);
-    return;
-  }
-
-  if (!warnedNoProvider) {
-    console.warn(
-      "⚠️ No email provider configured (set RESEND_API_KEY or POSTMARK_API_KEY) — skipping email."
-    );
-    warnedNoProvider = true;
-  }
-}
-
-/** Fire-and-forget. Schedules the send; never throws into the caller. */
-export function dispatch(opts: SendOpts): void {
-  void sendNow(opts).catch((e) => {
-    console.error(`[email] failed to send "${opts.subject}" to ${opts.to}:`, e?.message ?? e);
-  });
-}
-
-function layout(title: string, bodyHtml: string): string {
-  return `<div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;max-width:520px;margin:0 auto;color:#1a1a1a">
-    <h2 style="margin:0 0 12px">${title}</h2>
-    ${bodyHtml}
-    <hr style="border:none;border-top:1px solid #eee;margin:24px 0"/>
-    <p style="color:#888;font-size:12px">Skimflow — nanopayments for creators on Arc.</p>
-  </div>`;
-}
-
-// ── Earning notifications (batched) ──────────────────────────────────────────
-// Buffer per-creator earning events for a 60s window. On flush: ≤5 events send
-// individually; >5 events collapse into one summary email (anti-flood).
-export interface EarningEvent {
-  creatorId: string;
-  to: string;
-  creatorName?: string;
-  contentTitle: string;
-  blockIndex: number;
-  gross: string; // decimal USDC
-  creatorCut: string; // decimal USDC
-  runningTotalToday: string; // decimal USDC
-}
-
-interface Buffer {
-  events: EarningEvent[];
-  timer: ReturnType<typeof setTimeout>;
-}
-
-const BATCH_WINDOW_MS = 60_000;
-const BATCH_THRESHOLD = 5;
-const buffers = new Map<string, Buffer>();
-
-function flushEarnings(creatorId: string): void {
-  const buf = buffers.get(creatorId);
-  if (!buf) return;
-  buffers.delete(creatorId);
-  const { events } = buf;
-  if (events.length === 0) return;
-
-  if (events.length <= BATCH_THRESHOLD) {
-    for (const ev of events) {
-      dispatch({
-        to: ev.to,
-        subject: `You just earned ${ev.creatorCut} USDC on ${ev.contentTitle}`,
-        html: layout(
-          `💸 You earned ${ev.creatorCut} USDC`,
-          `<p>Block ${ev.blockIndex} of <strong>${ev.contentTitle}</strong> was just unlocked.</p>
-           <ul>
-             <li>Gross payment: <strong>${ev.gross} USDC</strong></li>
-             <li>Your cut: <strong>${ev.creatorCut} USDC</strong></li>
-             <li>Earned today so far: <strong>${ev.runningTotalToday} USDC</strong></li>
-           </ul>`
-        ),
-      });
+    if (error) {
+      console.error(`[email] failed to send "${opts.subject}" to ${opts.to}:`, error.message);
+      return { ok: false, error: error.message };
     }
-    return;
+    console.log(`[email] sent "${opts.subject}" to ${opts.to} (id: ${data?.id ?? "unknown"})`);
+    return { ok: true, id: data?.id };
+  } catch (e) {
+    const message = (e as Error)?.message ?? String(e);
+    console.error(`[email] failed to send "${opts.subject}" to ${opts.to}:`, message);
+    return { ok: false, error: message };
   }
-
-  // >5 in the window → one summary.
-  const last = events[events.length - 1];
-  let gross = 0;
-  let cut = 0;
-  for (const ev of events) {
-    gross += Number(ev.gross);
-    cut += Number(ev.creatorCut);
-  }
-  const titles = Array.from(new Set(events.map((e) => e.contentTitle)));
-  dispatch({
-    to: last.to,
-    subject: `You earned ${cut.toFixed(6)} USDC across ${events.length} unlocks`,
-    html: layout(
-      `💸 ${events.length} unlocks in the last minute`,
-      `<p>Your content was unlocked <strong>${events.length}</strong> times just now.</p>
-       <ul>
-         <li>Total gross: <strong>${gross.toFixed(6)} USDC</strong></li>
-         <li>Your cut: <strong>${cut.toFixed(6)} USDC</strong></li>
-         <li>Earned today so far: <strong>${last.runningTotalToday} USDC</strong></li>
-         <li>Content: ${titles.join(", ")}</li>
-       </ul>`
-    ),
-  });
 }
 
-export function notifyEarning(ev: EarningEvent): void {
-  const existing = buffers.get(ev.creatorId);
-  if (existing) {
-    existing.events.push(ev);
-    return;
-  }
-  const timer = setTimeout(() => flushEarnings(ev.creatorId), BATCH_WINDOW_MS);
-  // Don't keep the process alive solely for a pending email flush.
-  if (typeof timer.unref === "function") timer.unref();
-  buffers.set(ev.creatorId, { events: [ev], timer });
+export async function sendWelcomeEmail(user: { name: string; email: string }): Promise<void> {
+  const name = firstName(user.name);
+  const dashboardUrl = `${appUrl()}/dashboard`;
+  const html = emailShell(`
+    <h1 style="margin:0 0 8px;font-size:24px;font-weight:600;line-height:1.3;">Welcome to Skimflow, ${name} 👋</h1>
+    <p style="margin:0 0 20px;color:${MUTED};font-size:16px;line-height:1.6;">
+      Skimflow lets you earn USDC every time someone reads a block of your content — no subscriptions, just readers paying for what they actually read.
+    </p>
+    <ul style="margin:0;padding:0 0 0 20px;color:${TEXT};font-size:15px;line-height:1.8;">
+      <li>Your wallet is ready — you can start earning immediately</li>
+      <li>Write your first post from your dashboard</li>
+      <li>Readers pay per block, you keep 80% of every unlock</li>
+    </ul>
+    ${ctaButton(dashboardUrl, "Go to your dashboard")}
+    ${footer("You're receiving this because you signed up for Skimflow.")}
+  `);
+  const text = `Welcome to Skimflow, ${name}!\n\nSkimflow lets you earn USDC every time someone reads a block of your content.\n\nGo to your dashboard: ${dashboardUrl}\n\nYou're receiving this because you signed up for Skimflow.`;
+  await sendEmail({ to: user.email, subject: `Welcome to Skimflow, ${name} 👋`, html, text });
 }
 
-// ── Payout + onboarding emails (sent immediately, still async) ───────────────
-export function notifyPayoutInitiated(args: {
-  to: string;
-  amount: string;
-  wallet: string;
-  etaText?: string;
-}): void {
-  const truncated = `${args.wallet.slice(0, 6)}…${args.wallet.slice(-4)}`;
-  dispatch({
-    to: args.to,
-    subject: `Your payout of ${args.amount} USDC is on its way`,
-    html: layout(
-      `🚀 Payout initiated`,
-      `<p>We're sending <strong>${args.amount} USDC</strong> to your linked wallet <code>${truncated}</code>.</p>
-       <p>Expected settlement: ${args.etaText ?? "within a few minutes on Arc"}.</p>`
-    ),
-  });
-}
-
-export function notifyPayoutConfirmed(args: {
-  to: string;
+export async function sendPayoutNotification(data: {
+  creatorName: string;
+  creatorEmail: string;
   amount: string;
   txHash: string;
-  explorerUrl?: string;
-}): void {
-  const link = args.explorerUrl
-    ? `<p>View on explorer: <a href="${args.explorerUrl}/tx/${args.txHash}">${args.txHash}</a></p>`
-    : `<p>Transaction: <code>${args.txHash}</code></p>`;
-  dispatch({
-    to: args.to,
-    subject: `Payout confirmed — ${args.amount} USDC sent`,
-    html: layout(`✅ Payout confirmed`, `<p><strong>${args.amount} USDC</strong> has settled to your wallet.</p>${link}`),
+  walletAddress: string;
+}): Promise<void> {
+  const name = firstName(data.creatorName);
+  const dashboardUrl = `${appUrl()}/dashboard`;
+  const txShort = truncateAddr(data.txHash);
+  const walletShort = truncateAddr(data.walletAddress);
+  const explorerUrl = `https://explorer.arc.net/tx/${data.txHash}`;
+
+  const html = emailShell(`
+    <h1 style="margin:0 0 8px;font-size:22px;font-weight:600;line-height:1.3;">Your payout is on its way, ${name}.</h1>
+    <p style="margin:24px 0 8px;color:${MUTED};font-size:14px;">Amount received</p>
+    <p style="margin:0;font-size:36px;font-weight:700;color:${ACCENT};line-height:1.2;">${data.amount} USDC</p>
+    <table style="margin:28px 0 0;width:100%;border-collapse:collapse;font-size:14px;line-height:1.6;">
+      <tr>
+        <td style="padding:8px 0;color:${MUTED};vertical-align:top;width:140px;">Transaction</td>
+        <td style="padding:8px 0;color:${TEXT};">
+          <a href="${explorerUrl}" style="color:${ACCENT};text-decoration:none;font-family:ui-monospace,monospace;">${txShort}</a>
+        </td>
+      </tr>
+      <tr>
+        <td style="padding:8px 0;color:${MUTED};vertical-align:top;">Wallet</td>
+        <td style="padding:8px 0;color:${TEXT};font-family:ui-monospace,monospace;">${walletShort}</td>
+      </tr>
+    </table>
+    <p style="margin:20px 0 0;color:${MUTED};font-size:14px;line-height:1.5;">Settled on Arc Testnet in USDC via Circle.</p>
+    ${ctaButton(dashboardUrl, "View your earnings")}
+    ${footer("You're receiving this because you're a creator on Skimflow.")}
+  `);
+
+  const text = `Your payout is on its way, ${name}.\n\nAmount: ${data.amount} USDC\nTransaction: ${explorerUrl}\nWallet: ${data.walletAddress}\n\nSettled on Arc Testnet in USDC via Circle.\n\nView your earnings: ${dashboardUrl}\n\nYou're receiving this because you're a creator on Skimflow.`;
+
+  await sendEmail({
+    to: data.creatorEmail,
+    subject: `You received ${data.amount} USDC 💰`,
+    html,
+    text,
   });
 }
 
-export function notifyFirstPublish(args: {
+/** Custom message from admin — same dark template as transactional emails. */
+export async function sendAdminMessage(args: {
   to: string;
   name?: string;
-  title: string;
-  readerUrl: string;
-  agentUrl?: string;
-}): void {
-  const agentLine = args.agentUrl
-    ? `<p>Agents can pay-per-block via your machine-readable endpoint:<br/><a href="${args.agentUrl}">${args.agentUrl}</a></p>`
-    : "";
-  dispatch({
+  subject: string;
+  body: string;
+}): Promise<SendEmailResult> {
+  const greeting = firstName(args.name ?? "there");
+  const html = emailShell(`
+    <p style="margin:0 0 16px;color:${MUTED};font-size:14px;">Hi ${escapeHtml(greeting)},</p>
+    <h1 style="margin:0 0 16px;font-size:22px;font-weight:600;line-height:1.3;">${escapeHtml(args.subject)}</h1>
+    <div style="font-size:16px;line-height:1.7;color:${TEXT};">${bodyToHtml(args.body)}</div>
+    ${footer("You're receiving this from Skimflow.")}
+  `);
+  return sendEmail({
     to: args.to,
-    subject: `🎉 Your first piece is live: ${args.title}`,
-    html: layout(
-      `Welcome to Skimflow${args.name ? `, ${args.name}` : ""}!`,
-      `<p>Your content <strong>${args.title}</strong> is published.</p>
-       <p>Share your reader link with humans:<br/><a href="${args.readerUrl}">${args.readerUrl}</a></p>
-       ${agentLine}
-       <p>You'll get an email each time someone unlocks a block.</p>`
-    ),
+    subject: args.subject,
+    html,
+    text: `Hi ${greeting},\n\n${args.subject}\n\n${args.body}\n\nYou're receiving this from Skimflow.`,
   });
 }

@@ -9,6 +9,7 @@ export const dynamic = "force-dynamic";
 const TABS = [
   { href: "/admin", label: "Overview" },
   { href: "/admin/users", label: "Users" },
+  { href: "/admin/email", label: "Email" },
   { href: "/admin/content", label: "Content" },
   { href: "/admin/payments", label: "Payments" },
   { href: "/admin/wallets", label: "Wallets" },

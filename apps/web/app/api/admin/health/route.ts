@@ -42,8 +42,8 @@ export async function GET() {
       env_warnings.push("CIRCLE_WEBHOOK_SECRET not set — webhook signatures cannot be verified");
     if (!process.env.NEXTAUTH_SECRET && !process.env.AUTH_SECRET)
       env_warnings.push("NEXTAUTH_SECRET not set — sessions are insecure");
-    if (!process.env.RESEND_API_KEY && !process.env.POSTMARK_API_KEY)
-      env_warnings.push("No email provider configured — earning/payout emails are disabled");
+    if (!process.env.RESEND_API_KEY || !process.env.RESEND_FROM_EMAIL)
+      env_warnings.push("Resend not fully configured — transactional emails are disabled");
 
     return Response.json({
       database: { status: db.ok ? "ok" : "down", latency_ms: db.latencyMs },

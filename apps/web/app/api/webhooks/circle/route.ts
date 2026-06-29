@@ -5,13 +5,12 @@ import {
   failLedgerByToken,
   finalizeLedgerByToken,
   flagAgentSessionByPayer,
-  getContentById,
   getLedgerByToken,
   recordAdminEvent,
 } from "@/lib/store";
-import { sendEarningNotification } from "@/lib/notify";
-import { notifyPayoutConfirmed } from "@/lib/email";
+import { sendPayoutNotification } from "@/lib/email";
 import { getUserById } from "@/lib/store";
+import { formatUsdc } from "@/lib/money";
 import { envLimit, rateLimit, rateLimitResponse } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
@@ -47,7 +46,7 @@ interface CircleEvent {
  * Circle webhook — the AUTHORITATIVE source of payment confirmation. We never
  * trust X-Payment-Token alone; ledger rows are only finalized here.
  *
- *  - payment.confirmed  → ledger 'completed' + creator earning email
+ *  - payment.confirmed  → ledger 'completed'
  *  - payment.failed     → ledger 'failed'   + flag agent session
  *  - transfer.confirmed → payout 'confirmed' + payout email
  *
@@ -88,17 +87,6 @@ export async function POST(req: NextRequest) {
     case "payment.confirmed": {
       if (!event.paymentId) return Response.json({ error: "missing_paymentId" }, { status: 400 });
       const row = await finalizeLedgerByToken(event.paymentId, txHash);
-      // `row` is set only when we transitioned pending → completed (idempotent).
-      if (row && row.creator_id && row.content_id) {
-        const content = await getContentById(row.content_id);
-        void sendEarningNotification({
-          creatorId: row.creator_id,
-          contentTitle: content?.title ?? "your content",
-          blockIndex: row.block_index ?? 0,
-          gross: row.gross_amount,
-          creatorCut: row.creator_amount,
-        });
-      }
       return Response.json({ ok: true, finalized: !!row });
     }
 
@@ -123,12 +111,13 @@ export async function POST(req: NextRequest) {
           amountGross: payout.amount,
           metadata: { txHash: payout.tx_hash, status: "confirmed" },
         });
-        if (creator?.email) {
-          notifyPayoutConfirmed({
-            to: creator.email,
-            amount: payout.amount,
-            txHash: payout.tx_hash ?? "",
-            explorerUrl: process.env.NEXT_PUBLIC_ARC_EXPLORER_URL,
+        if (creator?.email && payout.tx_hash) {
+          void sendPayoutNotification({
+            creatorName: creator.display_name ?? creator.name ?? "Creator",
+            creatorEmail: creator.email,
+            amount: formatUsdc(payout.amount),
+            txHash: payout.tx_hash,
+            walletAddress: payout.wallet_address,
           });
         }
       }

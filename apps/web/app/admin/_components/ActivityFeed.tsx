@@ -60,6 +60,10 @@ function describe(e: FeedEvent): string {
       return `webhook rejected: ${(e.metadata?.reason as string) ?? "bad signature"}`;
     case "IMPERSONATE":
       return `admin impersonation ${(e.metadata?.action as string) ?? ""}`;
+    case "ADMIN_EMAIL":
+      return (e.metadata?.action as string) === "resend_welcome"
+        ? `resent welcome to ${(e.metadata?.email as string) ?? "user"}`
+        : `admin email → ${(e.metadata?.target as string) ?? "?"} (${(e.metadata?.sent as number) ?? 1} sent)`;
     default:
       return e.event_type;
   }

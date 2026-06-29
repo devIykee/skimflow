@@ -2,6 +2,7 @@ import NextAuth from "next-auth";
 import { authConfig } from "./auth.config.js";
 import { getUserById, recordAdminEvent, setEmbeddedWallet, upsertUserFromOAuth } from "./lib/store.js";
 import { provisionWallet, walletsEnabled } from "./lib/circle-wallets.js";
+import { sendWelcomeEmail } from "./lib/email.js";
 
 /**
  * Full NextAuth instance (Node runtime). Adds the DB-backed jwt callback that
@@ -50,6 +51,14 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             } catch (e) {
               console.error("[auth] wallet auto-provision failed:", (e as Error)?.message ?? e);
             }
+          }
+          try {
+            await sendWelcomeEmail({
+              name: dbUser.display_name ?? dbUser.name ?? "there",
+              email: dbUser.email,
+            });
+          } catch (e) {
+            console.error("[auth] welcome email failed:", (e as Error)?.message ?? e);
           }
         }
       } else if (trigger === "update" && token.uid) {

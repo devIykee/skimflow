@@ -7,7 +7,6 @@ import {
 import {
   createBook,
   createContent,
-  creatorPublishedCount,
   listContentByCreator,
   recordAdminEvent,
 } from "@/lib/store";
@@ -15,7 +14,6 @@ import { chunkContent, splitPages } from "@/lib/chunk-content";
 import { validateArticleChunks, hasBlockingErrors } from "@/lib/chunk-validate";
 import { normalizeImageUrl, isLikelyImageUrl, MAX_SKIMFLOW_IMAGES, MAX_CAPTION_CHARS } from "@/lib/image-links";
 import { normalizeUsdc } from "@/lib/money";
-import { notifyFirstPublish } from "@/lib/email";
 import { detectPlatform } from "@/lib/ownership";
 import type { ContentType } from "@/lib/types";
 
@@ -109,7 +107,6 @@ export async function POST(req: NextRequest) {
       const hasWallet = !!user.wallet_address || !!user.embedded_wallet_address;
       const walletGated = requestedStatus === "published" && !hasWallet;
       const status = walletGated ? "draft" : requestedStatus;
-      const isFirstPublish = status === "published" && (await creatorPublishedCount(user.id)) === 0;
 
       const content = await createBook({
         creatorId: user.id,
@@ -132,8 +129,6 @@ export async function POST(req: NextRequest) {
           contentId: content.id,
           metadata: { title: content.title, slug: content.slug, type: "book" },
         });
-        if (isFirstPublish && user.email)
-          notifyFirstPublish({ to: user.email, name: user.display_name ?? undefined, title: content.title, readerUrl });
       }
       if (walletGated)
         return Response.json(
@@ -214,8 +209,6 @@ export async function POST(req: NextRequest) {
     const walletGated = requestedStatus === "published" && !hasWallet;
     const status = walletGated ? "draft" : requestedStatus;
 
-    const isFirstPublish = status === "published" && (await creatorPublishedCount(user.id)) === 0;
-
     // Import provenance only. Ownership verification was removed to keep
     // publishing seamless — we still record the source URL + platform for
     // attribution, but never block or gate on a verification step.
@@ -258,9 +251,6 @@ export async function POST(req: NextRequest) {
         contentId: content.id,
         metadata: { title: content.title, slug: content.slug, type: contentType },
       });
-      if (isFirstPublish && user.email) {
-        notifyFirstPublish({ to: user.email, name: user.display_name ?? undefined, title: content.title, readerUrl, agentUrl });
-      }
     }
 
     if (walletGated) {

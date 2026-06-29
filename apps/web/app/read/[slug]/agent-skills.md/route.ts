@@ -27,8 +27,6 @@ import {
   clientIp,
   type RateResult,
 } from "@/lib/rate-limit";
-import { sendEarningNotification } from "@/lib/notify";
-
 export const runtime = "nodejs";
 
 const MARKDOWN = "text/markdown; charset=utf-8";
@@ -128,7 +126,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ slug: strin
   const xPayment = req.headers.get("x-payment");
   const token = req.headers.get("x-payment-token");
 
-  // Shared: record an agent unlock + email on first credit for this payment.
+  // Shared: record an agent unlock on first credit for this payment.
   const serveBlock = async (
     paymentToken: string,
     payerId: string,
@@ -156,15 +154,6 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ slug: strin
         status,
       });
       await recordAgentUnlock(id, content.id, blockIndex, split.gross);
-      if (status === "completed") {
-        void sendEarningNotification({
-          creatorId: content.creator_id,
-          contentTitle: content.title,
-          blockIndex,
-          gross: split.gross,
-          creatorCut: split.creatorAmount,
-        });
-      }
     }
     const res = markdown(`<!-- block ${blockIndex} of ${content.title} -->\n\n${chunk.text}\n`, 200, rl, {
       "X-Payment-Status": ledger.status,

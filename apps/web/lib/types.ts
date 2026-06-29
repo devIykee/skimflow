@@ -160,7 +160,8 @@ export type AdminEventType =
   | "402_HIT"
   | "WEBHOOK_REJECTED"
   | "IMPERSONATE"
-  | "REPORT";
+  | "REPORT"
+  | "ADMIN_EMAIL";
 
 export interface AdminEvent {
   id: string;

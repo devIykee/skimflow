@@ -1,14 +1,13 @@
 import { assertNotImpersonating, errorResponse, resolveActingUser } from "@/lib/session";
 import { createPayout, creatorEarnings, recordAdminEvent } from "@/lib/store";
-import { notifyPayoutInitiated } from "@/lib/email";
 
 export const runtime = "nodejs";
 
 /**
  * POST — request a payout of the creator's unpaid balance to their linked
- * wallet. Creates an 'initiated' payout row and emails the creator. In live
- * mode the Circle transfer is triggered out-of-band; transfer.confirmed
- * (webhook) flips it to 'confirmed'.
+ * wallet. Creates an 'initiated' payout row. In live mode the Circle transfer
+ * is triggered out-of-band; transfer.confirmed (webhook) flips it to
+ * 'confirmed' and sends the payout email.
  */
 export async function POST() {
   try {
@@ -31,9 +30,6 @@ export async function POST() {
       amountGross: pendingPayout,
       metadata: { wallet: user.wallet_address, status: "initiated", payoutId: payout.id },
     });
-    if (user.email) {
-      notifyPayoutInitiated({ to: user.email, amount: pendingPayout, wallet: user.wallet_address });
-    }
     return Response.json({ ok: true, payout });
   } catch (e) {
     return errorResponse(e);

@@ -28,7 +28,6 @@ import {
 import { splitPayment } from "@/lib/split-payment";
 import { validateWallet } from "@/lib/validate-wallet";
 import { getReferrerId } from "@/lib/referral";
-import { sendEarningNotification } from "@/lib/notify";
 import { toBaseUnits, toDecimal, wholePiecePrice } from "@/lib/money";
 import { PAY_SESSION_COOKIE, verifyPaySession } from "@/lib/session-key";
 import {
@@ -199,15 +198,6 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ slug: stri
         amountGross: split.gross,
         metadata: { slug: content.slug },
       });
-      if (simulate) {
-        void sendEarningNotification({
-          creatorId: content.creator_id,
-          contentTitle: content.title,
-          blockIndex,
-          gross: split.gross,
-          creatorCut: split.creatorAmount,
-        });
-      }
       return Response.json({
         paid: true,
         simulated: simulate,
@@ -302,14 +292,12 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ slug: stri
               await setLedgerMintTx(salt, mintTx);
               const splitTx = await splitOnChain(creatorWallet, referrerWallet, wholeWei);
               await finalizeLedgerByToken(salt, splitTx);
-              void sendEarningNotification({ creatorId: content.creator_id, contentTitle: content.title, blockIndex: 0, gross: wholeSplit.gross, creatorCut: wholeSplit.creatorAmount });
             } catch (err) {
               console.error("[reader whole settle]", String((err as Error)?.message ?? err));
             }
           });
         } else {
           await insertWhole("completed");
-          void sendEarningNotification({ creatorId: content.creator_id, contentTitle: content.title, blockIndex: 0, gross: wholeSplit.gross, creatorCut: wholeSplit.creatorAmount });
         }
 
         await recordAdminEvent({
@@ -439,13 +427,6 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ slug: stri
               await setLedgerMintTx(salt, mintTx);
               const splitTx = await splitOnChain(creatorWallet, referrerWallet, amountWei);
               await finalizeLedgerByToken(salt, splitTx);
-              void sendEarningNotification({
-                creatorId: content.creator_id,
-                contentTitle: content.title,
-                blockIndex,
-                gross: split.gross,
-                creatorCut: split.creatorAmount,
-              });
             } catch (err) {
               console.error("[reader optimistic settle]", String((err as Error)?.message ?? err));
             }
@@ -498,13 +479,6 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ slug: stri
             await setLedgerMintTx(salt, mintTx);
             const splitTx = await splitOnChain(creatorWallet, referrerWallet, amountWei);
             await finalizeLedgerByToken(salt, splitTx);
-            void sendEarningNotification({
-              creatorId: content.creator_id,
-              contentTitle: content.title,
-              blockIndex,
-              gross: split.gross,
-              creatorCut: split.creatorAmount,
-            });
           } catch (err) {
             // Burn already happened (recoverable via the Gateway attestation);
             // leave the row pending for reconciliation rather than failing it.
