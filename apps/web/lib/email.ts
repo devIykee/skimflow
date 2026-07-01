@@ -10,6 +10,8 @@ import { Resend } from "resend";
 
 const ACCENT = "#FF9B73";
 const BG = "#0a0a0a";
+const CARD = "#141416";
+const BORDER = "#26262b";
 const TEXT = "#ffffff";
 const MUTED = "#a1a1aa";
 
@@ -144,13 +146,25 @@ function truncateAddr(addr: string): string {
   return `${addr.slice(0, 8)}…${addr.slice(-6)}`;
 }
 
+/**
+ * Shared branded shell for every transactional email: a Skimflow wordmark, the
+ * content in a rounded dark card, and a brand sub-footer. Keeping this in one
+ * place means every email (welcome, payout, funds, admin message, broadcast)
+ * shares the same polished look.
+ */
 function emailShell(body: string): string {
   return `<!DOCTYPE html>
 <html lang="en">
 <head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/></head>
 <body style="margin:0;padding:32px 16px;background:${BG};font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;">
-  <div style="max-width:600px;margin:0 auto;color:${TEXT};">
-    ${body}
+  <div style="max-width:600px;margin:0 auto;">
+    <div style="padding:0 4px 20px;">
+      <span style="font-size:20px;font-weight:700;letter-spacing:-0.02em;color:${TEXT};">Skim<span style="color:${ACCENT};">flow</span></span>
+    </div>
+    <div style="background:${CARD};border:1px solid ${BORDER};border-radius:16px;padding:32px;color:${TEXT};">
+      ${body}
+    </div>
+    <p style="margin:18px 4px 0;color:${MUTED};font-size:12px;line-height:1.5;">Skimflow — pay-per-block reading for people and AI agents.</p>
   </div>
 </body>
 </html>`;

@@ -2002,3 +2002,52 @@ export function getUnreadNotificationCount(userId: string): Promise<number> {
     [userId]
   ).then((r) => Number(r?.n ?? 0));
 }
+
+// ── Admin-broadcast in-app notifications ─────────────────────────────────────
+// Admins push a plain notification (title/body/optional link) into users' bells.
+// Stored with type 'admin_message' — rendered by the legacy branch of the
+// notifications UI (no actor). Distinct from the social notifications above.
+
+/** Active (non-suspended) user ids, optionally filtered by role — broadcast targets. */
+export function listActiveUserIds(role?: UserRole): Promise<{ id: string }[]> {
+  const where = ["suspended = FALSE"];
+  const params: unknown[] = [];
+  if (role) {
+    params.push(role);
+    where.push(`role = $${params.length}`);
+  }
+  return query<{ id: string }>(`SELECT id FROM users WHERE ${where.join(" AND ")}`, params);
+}
+
+/** Count of active (non-suspended) users, optionally by role — for broadcast confirm UI. */
+export function countActiveUsers(role?: UserRole): Promise<number> {
+  const where = ["suspended = FALSE"];
+  const params: unknown[] = [];
+  if (role) {
+    params.push(role);
+    where.push(`role = $${params.length}`);
+  }
+  return queryOne<{ n: string }>(
+    `SELECT COUNT(*)::int AS n FROM users WHERE ${where.join(" AND ")}`,
+    params
+  ).then((r) => Number(r?.n ?? 0));
+}
+
+/**
+ * Insert one 'admin_message' notification per user id in a single statement.
+ * Returns how many rows were created. Ids must reference existing users.
+ */
+export async function createAdminNotifications(
+  userIds: string[],
+  input: { title: string; body?: string; link?: string | null }
+): Promise<number> {
+  if (userIds.length === 0) return 0;
+  const rows = await query<{ id: string }>(
+    `INSERT INTO notifications (user_id, type, title, body, link)
+     SELECT uid, 'admin_message', $2, $3, $4
+       FROM UNNEST($1::uuid[]) AS uid
+     RETURNING id`,
+    [userIds, input.title, input.body ?? "", input.link ?? null]
+  );
+  return rows.length;
+}
