@@ -390,6 +390,52 @@ export async function sendPayoutNotification(data: {
   });
 }
 
+/**
+ * "Funds received" email — sent when USDC lands in a user's Skimflow wallet
+ * (e.g. an admin airdrop from the fund panel). Mirrors the payout email's dark
+ * template. Never throws (goes through sendEmail).
+ */
+export async function sendFundsReceivedEmail(data: {
+  recipient: EmailRecipient;
+  amount: string;
+  walletAddress: string;
+  txHash?: string | null;
+}): Promise<void> {
+  const name = emailGreetingName(data.recipient);
+  const dashboardUrl = `${appUrl()}/dashboard`;
+  const walletShort = truncateAddr(data.walletAddress);
+  const txRow = data.txHash
+    ? `<tr>
+        <td style="padding:8px 0;color:${MUTED};vertical-align:top;width:140px;">Transaction</td>
+        <td style="padding:8px 0;color:${TEXT};">
+          <a href="https://explorer.arc.net/tx/${data.txHash}" style="color:${ACCENT};text-decoration:none;font-family:ui-monospace,monospace;">${truncateAddr(data.txHash)}</a>
+        </td>
+      </tr>`
+    : "";
+
+  const html = emailShell(`
+    <h1 style="margin:0 0 8px;font-size:22px;font-weight:600;line-height:1.3;">You've got USDC, ${name}.</h1>
+    <p style="margin:0 0 4px;color:${MUTED};font-size:14px;">Funds added to your Skimflow wallet</p>
+    <p style="margin:8px 0 0;font-size:36px;font-weight:700;color:${ACCENT};line-height:1.2;">${data.amount} USDC</p>
+    <table style="margin:28px 0 0;width:100%;border-collapse:collapse;font-size:14px;line-height:1.6;">
+      ${txRow}
+      <tr>
+        <td style="padding:8px 0;color:${MUTED};vertical-align:top;width:140px;">Wallet</td>
+        <td style="padding:8px 0;color:${TEXT};font-family:ui-monospace,monospace;">${walletShort}</td>
+      </tr>
+    </table>
+    <p style="margin:20px 0 0;color:${MUTED};font-size:14px;line-height:1.5;">USDC on Arc Testnet, ready to spend on Skimflow.</p>
+    ${ctaButton(dashboardUrl, "Open your wallet")}
+    ${footer("You're receiving this because funds were added to your Skimflow wallet.")}
+  `);
+
+  const text = `You've got USDC, ${name}.\n\nFunds added to your Skimflow wallet: ${data.amount} USDC\nWallet: ${data.walletAddress}${
+    data.txHash ? `\nTransaction: https://explorer.arc.net/tx/${data.txHash}` : ""
+  }\n\nUSDC on Arc Testnet, ready to spend on Skimflow.\n\nOpen your wallet: ${dashboardUrl}`;
+
+  await sendEmail({ to: data.recipient.email, subject: `You received ${data.amount} USDC 💰`, html, text });
+}
+
 function buildAdminMessagePayload(args: {
   recipient: EmailRecipient;
   subject: string;
