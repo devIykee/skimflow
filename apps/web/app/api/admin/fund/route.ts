@@ -4,6 +4,8 @@ import type { Address } from "viem";
 import { requireAdmin, errorResponse, HttpError } from "@/lib/session";
 import { getUsersByIds, recordAdminEvent } from "@/lib/store";
 import { sendGas, sendUsdc } from "@/lib/gateway-relayer";
+import { sendFundsReceivedEmail } from "@/lib/email";
+import { formatUsdc } from "@/lib/money";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -68,6 +70,18 @@ export async function POST(req: NextRequest) {
         r.error = String((e as Error)?.message ?? e).slice(0, 200);
       }
       results.push(r);
+
+      // Notify the recipient that USDC landed in their wallet. Fire-and-forget:
+      // a failed email must never affect the funding result. Gas-only sends
+      // (infrastructure, not spendable money) don't trigger an email.
+      if (r.ok && r.usdcTx && u?.email) {
+        void sendFundsReceivedEmail({
+          recipient: { email: u.email, name: u.name, display_name: u.display_name, handle: u.handle },
+          amount: formatUsdc(usdcAmount),
+          walletAddress: to,
+          txHash: r.usdcTx,
+        }).catch(() => undefined);
+      }
     }
 
     const funded = results.filter((r) => r.ok).length;
