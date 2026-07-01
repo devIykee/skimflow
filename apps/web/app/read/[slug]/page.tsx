@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import { getChapters, getChunks, getContentWithCreator, getUserById, incrementView } from "@/lib/store";
+import { getChapters, getChunks, getContentWithCreator, getPostLikeCount, getUserById, incrementView, isPostLiked } from "@/lib/store";
 import { currentSession } from "@/lib/session";
 import ChunkReader from "./_components/ChunkReader";
 import BookReader from "./_components/BookReader";
@@ -143,6 +143,12 @@ export default async function ReaderPage({ params }: { params: Promise<{ slug: s
     );
   }
 
+  // Post-level like state for the comments section (non-book reader).
+  const [postLikeCount, postLiked] = await Promise.all([
+    getPostLikeCount(content.id),
+    viewer?.user?.id ? isPostLiked(viewer.user.id, content.id) : Promise.resolve(false),
+  ]);
+
   return (
     <>
       {JsonLd}
@@ -170,7 +176,7 @@ export default async function ReaderPage({ params }: { params: Promise<{ slug: s
         }))}
       />
       {/* Social discussion lives below the reader (not on the full-screen book reader). */}
-      <CommentsSection postId={content.id} />
+      <CommentsSection postId={content.id} initialLikeCount={postLikeCount} initialLiked={postLiked} />
     </>
   );
 }

@@ -5,7 +5,6 @@ import Link from "next/link";
 import { AnimatePresence, motion } from "framer-motion";
 import { formatUsdc } from "@/lib/money";
 import { timeAgo } from "@/lib/time-ago";
-import LikeButton from "@/components/motion/LikeButton";
 import ComposerFab from "@/components/composer/ComposerFab";
 import SuggestedCreators from "@/components/SuggestedCreators";
 import type { ComposerCallbacks, CreatedContent, OptimisticPost } from "@/components/composer/ComposerForm";
@@ -358,18 +357,21 @@ function PostCard({ p, pending = false, unseen = false }: { p: FeedPost; pending
       <div className="mt-1 flex items-center justify-between gap-2 border-t border-outline-variant/60 pt-3">
         <div className="flex items-center gap-4">
           <span className="pill">{TYPE_LABEL[p.contentType] ?? p.contentType}</span>
-          {!pending && (
-            <>
-              <LikeButton kind="post" id={p.id} initialLiked={!!p.liked} initialCount={p.likeCount ?? 0} size="sm" />
-              <Link
-                href={p.url}
-                className="inline-flex items-center gap-1 text-on-surface-variant transition-colors hover:text-primary"
-                aria-label="Comments"
-              >
-                <span className="material-symbols-outlined text-[18px]">chat_bubble</span>
-                {(p.commentCount ?? 0) > 0 && <span className="font-body-sm text-[12px]">{p.commentCount}</span>}
-              </Link>
-            </>
+          {!pending && ((p.likeCount ?? 0) > 0 || (p.commentCount ?? 0) > 0) && (
+            <span className="flex items-center gap-3 text-outline">
+              {(p.likeCount ?? 0) > 0 && (
+                <span className="inline-flex items-center gap-1">
+                  <span className="material-symbols-outlined text-[16px]">favorite</span>
+                  <span className="font-body-sm text-[12px]">{p.likeCount}</span>
+                </span>
+              )}
+              {(p.commentCount ?? 0) > 0 && (
+                <span className="inline-flex items-center gap-1">
+                  <span className="material-symbols-outlined text-[16px]">chat_bubble</span>
+                  <span className="font-body-sm text-[12px]">{p.commentCount}</span>
+                </span>
+              )}
+            </span>
           )}
         </div>
         <div className="flex items-center gap-3">

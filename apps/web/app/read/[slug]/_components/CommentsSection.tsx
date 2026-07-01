@@ -38,7 +38,15 @@ interface Comment {
   liked: boolean;
 }
 
-export default function CommentsSection({ postId }: { postId: string }) {
+export default function CommentsSection({
+  postId,
+  initialLikeCount = 0,
+  initialLiked = false,
+}: {
+  postId: string;
+  initialLikeCount?: number;
+  initialLiked?: boolean;
+}) {
   const { data: session, status } = useSession();
   const me = session?.user?.id ?? null;
   const toast = useToast();
@@ -140,7 +148,12 @@ export default function CommentsSection({ postId }: { postId: string }) {
 
   return (
     <section className="mx-auto mt-12 max-w-3xl px-margin-mobile pb-24 md:px-margin-desktop">
-      <h2 className="mb-5 font-headline-sm text-headline-sm">comments ({count})</h2>
+      {/* Post engagement: like the piece + comment count. The like ACTION lives
+          here in the reader, not on feed cards. */}
+      <div className="mb-6 flex items-center justify-between gap-4 border-b border-outline-variant pb-4">
+        <h2 className="font-headline-sm text-headline-sm">comments ({count})</h2>
+        <LikeButton kind="post" id={postId} initialLiked={initialLiked} initialCount={initialLikeCount} />
+      </div>
 
       {/* Composer (or sign-in prompt). */}
       {authed ? (

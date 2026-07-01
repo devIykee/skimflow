@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { formatUsdc } from "@/lib/money";
 import ShareAgentButton from "@/components/ShareAgentButton";
-import LikeButton from "@/components/motion/LikeButton";
 import FollowButton from "@/components/FollowButton";
 import ComposerFab from "@/components/composer/ComposerFab";
 import type { ComposerCallbacks, CreatedContent, OptimisticPost } from "@/components/composer/ComposerForm";
@@ -393,18 +392,21 @@ export default function ForYouPage() {
               )}
             </Link>
 
-            {/* Engagement signals (hidden on optimistic/pending items). */}
-            {!c.id.startsWith("temp-") && (
-              <div className="mb-1 flex items-center gap-4">
-                <LikeButton kind="post" id={c.id} initialLiked={!!c.liked} initialCount={c.likeCount ?? 0} size="sm" />
-                <Link
-                  href={c.url}
-                  className="inline-flex items-center gap-1 text-on-surface-variant transition-colors hover:text-primary"
-                  aria-label="Comments"
-                >
-                  <span className="material-symbols-outlined text-[18px]">chat_bubble</span>
-                  {(c.commentCount ?? 0) > 0 && <span className="font-body-sm text-[12px]">{c.commentCount}</span>}
-                </Link>
+            {/* Engagement counts (social proof only — actions live in the reader). */}
+            {!c.id.startsWith("temp-") && ((c.likeCount ?? 0) > 0 || (c.commentCount ?? 0) > 0) && (
+              <div className="mb-1 flex items-center gap-3 text-outline">
+                {(c.likeCount ?? 0) > 0 && (
+                  <span className="inline-flex items-center gap-1">
+                    <span className="material-symbols-outlined text-[16px]">favorite</span>
+                    <span className="font-body-sm text-[12px]">{c.likeCount}</span>
+                  </span>
+                )}
+                {(c.commentCount ?? 0) > 0 && (
+                  <span className="inline-flex items-center gap-1">
+                    <span className="material-symbols-outlined text-[16px]">chat_bubble</span>
+                    <span className="font-body-sm text-[12px]">{c.commentCount}</span>
+                  </span>
+                )}
               </div>
             )}
 
