@@ -41,6 +41,31 @@ export default function UserMenu() {
   const isAdmin = user?.role === "admin";
   const initial = (user?.name || user?.email || "?").trim().charAt(0).toUpperCase();
 
+  // Unread notifications — polled here so the count shows on the profile avatar
+  // and in the menu (the notification bell now lives inside this dropdown).
+  const [unread, setUnread] = useState(0);
+  useEffect(() => {
+    if (status !== "authenticated") return;
+    let alive = true;
+    const load = async () => {
+      try {
+        const r = await fetch("/api/notifications/unread-count");
+        if (!r.ok) return;
+        const d = await r.json();
+        if (alive && typeof d.unreadCount === "number") setUnread(d.unreadCount);
+      } catch {
+        /* transient */
+      }
+    };
+    void load();
+    const id = setInterval(load, 20_000);
+    return () => {
+      alive = false;
+      clearInterval(id);
+    };
+  }, [status]);
+  const unreadBadge = unread <= 0 ? null : unread >= 10 ? "9+" : String(unread);
+
   return (
     <div className="relative" ref={ref}>
       <button
@@ -61,6 +86,12 @@ export default function UserMenu() {
         {isConnected && (
           <span className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border-2 border-surface bg-secondary" />
         )}
+        {/* Unread-notifications badge. */}
+        {signedIn && unreadBadge && (
+          <span className="absolute -right-1 -top-1 flex h-4 min-w-[16px] items-center justify-center rounded-full border-2 border-surface bg-primary px-1 font-label-caps text-[9px] font-semibold text-on-primary">
+            {unreadBadge}
+          </span>
+        )}
       </button>
 
       {open && (
@@ -78,6 +109,13 @@ export default function UserMenu() {
               </div>
 
               <div className="border-t border-outline-variant py-1">
+                <MenuLink
+                  href="/notifications"
+                  icon="notifications"
+                  label="Notifications"
+                  onClick={() => setOpen(false)}
+                  badge={unreadBadge}
+                />
                 <MenuLink href="/dashboard" icon="dashboard" label="Creator dashboard" onClick={() => setOpen(false)} />
                 <MenuLink
                   href={`/dashboard/settings?returnTo=${encodeURIComponent(pathname ?? "/dashboard")}`}
@@ -118,7 +156,19 @@ export default function UserMenu() {
   );
 }
 
-function MenuLink({ href, icon, label, onClick }: { href: string; icon: string; label: string; onClick: () => void }) {
+function MenuLink({
+  href,
+  icon,
+  label,
+  onClick,
+  badge,
+}: {
+  href: string;
+  icon: string;
+  label: string;
+  onClick: () => void;
+  badge?: string | null;
+}) {
   return (
     <Link
       href={href}
@@ -127,6 +177,11 @@ function MenuLink({ href, icon, label, onClick }: { href: string; icon: string; 
     >
       <span className="material-symbols-outlined text-[18px]">{icon}</span>
       {label}
+      {badge && (
+        <span className="ml-auto flex h-4 min-w-[16px] items-center justify-center rounded-full bg-primary px-1 font-label-caps text-[10px] font-semibold text-on-primary">
+          {badge}
+        </span>
+      )}
     </Link>
   );
 }

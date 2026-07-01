@@ -6,7 +6,6 @@ import UserMenu from "@/components/UserMenu";
 import { Analytics } from '@vercel/analytics/next';
 import { SpeedInsights } from '@vercel/speed-insights/next';
 import MobileNav from "@/components/MobileNav";
-import NotificationBell from "@/components/NotificationBell";
 import Footer from "@/components/Footer";
 import ThemeToggle from "@/components/ThemeToggle";
 import Logo from "@/components/Logo";
@@ -105,7 +104,6 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                 <NavLink href="/docs">Docs</NavLink>
               </div>
               <div className="flex items-center gap-stack-md">
-                {authed && <NotificationBell />}
                 <ThemeToggle />
                 <UserMenu />
               </div>

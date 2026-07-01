@@ -6,7 +6,6 @@ import { AnimatePresence, motion } from "framer-motion";
 import { formatUsdc } from "@/lib/money";
 import { timeAgo } from "@/lib/time-ago";
 import LikeButton from "@/components/motion/LikeButton";
-import QuickComposer from "@/components/composer/QuickComposer";
 import ComposerFab from "@/components/composer/ComposerFab";
 import SuggestedCreators from "@/components/SuggestedCreators";
 import type { ComposerCallbacks, CreatedContent, OptimisticPost } from "@/components/composer/ComposerForm";
@@ -242,8 +241,7 @@ export default function FollowingPage() {
         </p>
       </header>
 
-      {/* Frictionless composer: sticky on desktop, FAB on mobile. */}
-      <QuickComposer surface="following" callbacks={composerCallbacks} />
+      {/* Frictionless composer — floating button (opens a modal / bottom sheet). */}
       <ComposerFab surface="following" callbacks={composerCallbacks} />
 
       {/* New-posts pill. */}
@@ -254,7 +252,7 @@ export default function FollowingPage() {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -8 }}
             onClick={reload}
-            className="sticky top-[132px] z-20 mx-auto mb-4 flex items-center gap-1 rounded-full bg-primary px-4 py-1.5 font-label-caps text-label-caps text-on-primary shadow-md md:top-[140px]"
+            className="sticky top-20 z-20 mx-auto mb-4 flex items-center gap-1 rounded-full bg-primary px-4 py-1.5 font-label-caps text-label-caps text-on-primary shadow-md"
           >
             <span className="material-symbols-outlined text-[16px]">arrow_upward</span>
             {newCount >= 5 ? "5+ new posts" : `${newCount} new post${newCount === 1 ? "" : "s"}`}
@@ -330,18 +328,18 @@ function PostCard({ p, pending = false, unseen = false }: { p: FeedPost; pending
       {/* Creator row. */}
       <div className="flex items-center gap-2">
         {unseen && <span className="h-2 w-2 shrink-0 rounded-full bg-primary" aria-label="New" />}
-        <Link href={`/creator/${p.creatorId}`} className="flex items-center gap-2 hover:opacity-90">
+        <Link href={`/creator/${p.creatorId}`} className="flex min-w-0 items-center gap-2 hover:opacity-90">
           <Avatar name={p.creatorName ?? p.creatorHandle} src={p.creatorAvatar} />
-          <span className="flex items-baseline gap-1.5">
-            <span className={`font-body-sm text-[14px] text-on-surface ${unseen ? "font-bold" : "font-semibold"}`}>
+          <span className="flex min-w-0 items-baseline gap-1.5">
+            <span className={`min-w-0 truncate font-body-sm text-[14px] text-on-surface ${unseen ? "font-bold" : "font-semibold"}`}>
               {p.creatorName ?? p.creatorHandle ?? "Creator"}
             </span>
             {p.creatorHandle && (
-              <span className="font-data-mono text-[12px] text-outline">@{p.creatorHandle}</span>
+              <span className="shrink-0 font-data-mono text-[12px] text-outline">@{p.creatorHandle}</span>
             )}
           </span>
         </Link>
-        <span className="font-body-sm text-[12px] text-outline">
+        <span className="shrink-0 whitespace-nowrap font-body-sm text-[12px] text-outline">
           · {pending ? "posting…" : timeAgo(p.publishedAt)}
         </span>
       </div>

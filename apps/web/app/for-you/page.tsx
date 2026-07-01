@@ -6,7 +6,6 @@ import { formatUsdc } from "@/lib/money";
 import ShareAgentButton from "@/components/ShareAgentButton";
 import LikeButton from "@/components/motion/LikeButton";
 import FollowButton from "@/components/FollowButton";
-import QuickComposer from "@/components/composer/QuickComposer";
 import ComposerFab from "@/components/composer/ComposerFab";
 import type { ComposerCallbacks, CreatedContent, OptimisticPost } from "@/components/composer/ComposerForm";
 
@@ -94,11 +93,26 @@ export default function ForYouPage() {
   const [verifiedOnly, setVerifiedOnly] = useState(false);
   const [loading, setLoading] = useState(false);
   const [hasMore, setHasMore] = useState(true);
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   const offsetRef = useRef(0);
   const loadingRef = useRef(false);
   const hasMoreRef = useRef(true);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
+  const filtersRef = useRef<HTMLDivElement | null>(null);
+
+  // Close the filter popover on outside click.
+  useEffect(() => {
+    if (!filtersOpen) return;
+    const onDoc = (e: MouseEvent) => {
+      if (filtersRef.current && !filtersRef.current.contains(e.target as Node)) setFiltersOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [filtersOpen]);
+
+  // Non-default filters active → show a dot on the filter button.
+  const filtersActive = sort !== "newest" || verifiedOnly;
 
   const searching = q.trim().length > 0;
 
@@ -242,8 +256,7 @@ export default function ForYouPage() {
         </p>
       </header>
 
-      {/* Frictionless composer: sticky on desktop, FAB on mobile (signed-in only). */}
-      <QuickComposer surface="for-you" callbacks={composerCallbacks} />
+      {/* Frictionless composer — floating button (opens a modal / bottom sheet). */}
       <ComposerFab surface="for-you" callbacks={composerCallbacks} />
 
       {/* Tabs — strictly separated content kinds. */}
@@ -282,16 +295,40 @@ export default function ForYouPage() {
         </div>
 
         {!searching && (
-          <div className="flex items-center gap-2">
-            <FilterPill active={sort === "newest"} onClick={() => setSort("newest")}>
-              Newest
-            </FilterPill>
-            <FilterPill active={sort === "popular"} onClick={() => setSort("popular")}>
-              Popular
-            </FilterPill>
-            <FilterPill active={verifiedOnly} onClick={() => setVerifiedOnly((v) => !v)}>
-              Verified ✓
-            </FilterPill>
+          <div className="relative" ref={filtersRef}>
+            <button
+              onClick={() => setFiltersOpen((o) => !o)}
+              aria-label="Filters"
+              aria-expanded={filtersOpen}
+              className={`relative flex h-10 w-10 items-center justify-center rounded-full border transition-colors ${
+                filtersActive || filtersOpen
+                  ? "border-primary text-primary"
+                  : "border-outline-variant text-on-surface-variant hover:border-primary hover:text-primary"
+              }`}
+            >
+              <span className="material-symbols-outlined text-[20px]">tune</span>
+              {filtersActive && (
+                <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-primary" aria-hidden />
+              )}
+            </button>
+
+            {filtersOpen && (
+              <div className="absolute right-0 z-30 mt-2 w-52 rounded-xl border border-outline-variant bg-surface p-3 shadow-lg">
+                <p className="mb-2 font-label-caps text-label-caps text-on-surface-variant">Sort</p>
+                <div className="mb-3 flex flex-wrap gap-2">
+                  <FilterPill active={sort === "newest"} onClick={() => setSort("newest")}>
+                    Newest
+                  </FilterPill>
+                  <FilterPill active={sort === "popular"} onClick={() => setSort("popular")}>
+                    Popular
+                  </FilterPill>
+                </div>
+                <p className="mb-2 font-label-caps text-label-caps text-on-surface-variant">Filter</p>
+                <FilterPill active={verifiedOnly} onClick={() => setVerifiedOnly((v) => !v)}>
+                  Verified ✓
+                </FilterPill>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -312,32 +349,37 @@ export default function ForYouPage() {
             key={c.id}
             className="card group flex flex-col text-left transition-all hover:-translate-y-0.5 hover:shadow-md"
           >
-            {/* Body links to the post; the author row (below) links to the profile. */}
-            <Link href={c.url} className="flex flex-1 flex-col text-left">
-              <div className="mb-2 flex items-center justify-between gap-2">
-                <span className="pill">{TYPE_LABEL[c.contentType] ?? c.contentType}</span>
-                <div className="flex items-center gap-2">
-                  {c.ownershipVerified && (
-                    <span
-                      className="flex items-center gap-0.5 font-label-caps text-label-caps text-secondary"
-                      title={`Ownership of the original ${c.sourcePlatform ?? "source"} verified`}
-                    >
-                      <span className="material-symbols-outlined text-[14px]">verified</span>source
-                    </span>
-                  )}
-                  {c.agentUrl && (
-                    <span className="font-data-mono text-[11px] text-primary" title="Agent-readable endpoint">
-                      agent-ready
-                    </span>
-                  )}
-                  {c.creatorVerified && (
-                    <span className="flex items-center gap-0.5 font-label-caps text-label-caps text-secondary">
-                      <span className="material-symbols-outlined text-[14px]">verified</span>verified
-                    </span>
-                  )}
-                </div>
+            {/* Top row: type + badges + follow — kept out of the post link and out
+                of the (cramped) footer, so Follow sits at the card's top-right. */}
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <span className="pill">{TYPE_LABEL[c.contentType] ?? c.contentType}</span>
+              <div className="flex items-center gap-2">
+                {c.ownershipVerified && (
+                  <span
+                    className="flex items-center gap-0.5 font-label-caps text-label-caps text-secondary"
+                    title={`Ownership of the original ${c.sourcePlatform ?? "source"} verified`}
+                  >
+                    <span className="material-symbols-outlined text-[14px]">verified</span>source
+                  </span>
+                )}
+                {c.agentUrl && (
+                  <span className="font-data-mono text-[11px] text-primary" title="Agent-readable endpoint">
+                    agent-ready
+                  </span>
+                )}
+                {c.creatorVerified && (
+                  <span className="flex items-center gap-0.5 font-label-caps text-label-caps text-secondary">
+                    <span className="material-symbols-outlined text-[14px]">verified</span>verified
+                  </span>
+                )}
+                {c.creatorId && !c.id.startsWith("temp-") && (
+                  <FollowButton userId={c.creatorId} name={c.creatorName} initialFollowing={!!c.authorFollowing} size="sm" />
+                )}
               </div>
+            </div>
 
+            {/* Body links to the post. */}
+            <Link href={c.url} className="flex flex-1 flex-col text-left">
               <h3 className="mb-2 font-headline-sm text-headline-sm leading-tight group-hover:text-primary">
                 {c.title}
               </h3>
@@ -393,9 +435,6 @@ export default function ForYouPage() {
                 </div>
               )}
               <div className="flex items-center gap-2 font-data-mono text-[12px]">
-                {c.creatorId && !c.id.startsWith("temp-") && (
-                  <FollowButton userId={c.creatorId} name={c.creatorName} initialFollowing={!!c.authorFollowing} size="sm" />
-                )}
                 {c.contentType === "agent-skills" && (
                   <ShareAgentButton slug={c.slug} title={c.title} pricePerBlock={c.pricePerBlock} variant="card" />
                 )}
