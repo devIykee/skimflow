@@ -1777,6 +1777,7 @@ export interface SuggestedCreator {
   handle: string | null;
   name: string | null;
   avatar: string | null;
+  bio: string | null;
 }
 
 /**
@@ -1786,7 +1787,7 @@ export interface SuggestedCreator {
  */
 export function getSuggestedCreators(userId: string, limit = 5): Promise<SuggestedCreator[]> {
   return query<SuggestedCreator>(
-    `SELECT id, display_name, handle, name, avatar
+    `SELECT id, display_name, handle, name, avatar, bio
        FROM users
       WHERE role = 'creator' AND suspended = FALSE AND id <> $1
         AND id NOT IN (SELECT following_id FROM follows WHERE follower_id = $1)
@@ -1914,7 +1915,7 @@ export async function deleteComment(commentId: string, userId: string): Promise<
 // title/body/link). These reference an actor + optional post/comment; the
 // recipient-facing text is rendered client-side from those refs.
 
-export type SocialNotificationType = "new_follower" | "post_comment" | "comment_reply";
+export type SocialNotificationType = "new_follower" | "post_comment" | "comment_reply" | "post_like";
 
 export interface NotificationEnriched {
   id: string;
@@ -2050,4 +2051,206 @@ export async function createAdminNotifications(
     [userIds, input.title, input.body ?? "", input.link ?? null]
   );
   return rows.length;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Engagement: post likes + comment likes (migration 0014). All NEW functions.
+// "Posts" are `content` rows. Inserts are idempotent (ON CONFLICT DO NOTHING).
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ── Post likes ───────────────────────────────────────────────────────────────
+
+/** Like a post. Idempotent. Returns true when a new like row was created. */
+export function likePost(userId: string, postId: string): Promise<boolean> {
+  return queryOne<{ id: string }>(
+    `INSERT INTO post_likes (user_id, post_id) VALUES ($1, $2)
+     ON CONFLICT (user_id, post_id) DO NOTHING RETURNING id`,
+    [userId, postId]
+  ).then((r) => !!r);
+}
+
+/** Remove a post like. No-op if absent. */
+export function unlikePost(userId: string, postId: string): Promise<unknown> {
+  return query(`DELETE FROM post_likes WHERE user_id = $1 AND post_id = $2`, [userId, postId]);
+}
+
+export function isPostLiked(userId: string, postId: string): Promise<boolean> {
+  return queryOne<{ x: number }>(
+    `SELECT 1 AS x FROM post_likes WHERE user_id = $1 AND post_id = $2`,
+    [userId, postId]
+  ).then((r) => !!r);
+}
+
+export function getPostLikeCount(postId: string): Promise<number> {
+  return queryOne<{ n: string }>(
+    `SELECT COUNT(*)::int AS n FROM post_likes WHERE post_id = $1`,
+    [postId]
+  ).then((r) => Number(r?.n ?? 0));
+}
+
+/** Like counts for many posts at once → Map<postId, count> (avoids N+1 in feeds). */
+export async function getPostLikeCounts(postIds: string[]): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  if (postIds.length === 0) return out;
+  const rows = await query<{ post_id: string; n: string }>(
+    `SELECT post_id, COUNT(*)::int AS n FROM post_likes
+      WHERE post_id = ANY($1::uuid[]) GROUP BY post_id`,
+    [postIds]
+  );
+  for (const r of rows) out.set(r.post_id, Number(r.n));
+  return out;
+}
+
+/** Which of `postIds` the user has liked → Set<postId>. Empty set when signed out. */
+export async function likedPostIdsFor(userId: string | null, postIds: string[]): Promise<Set<string>> {
+  const out = new Set<string>();
+  if (!userId || postIds.length === 0) return out;
+  const rows = await query<{ post_id: string }>(
+    `SELECT post_id FROM post_likes WHERE user_id = $1 AND post_id = ANY($2::uuid[])`,
+    [userId, postIds]
+  );
+  for (const r of rows) out.add(r.post_id);
+  return out;
+}
+
+// ── Comment likes ────────────────────────────────────────────────────────────
+
+/** Like a comment. Idempotent. Returns true when a new like row was created. */
+export function likeComment(userId: string, commentId: string): Promise<boolean> {
+  return queryOne<{ id: string }>(
+    `INSERT INTO comment_likes (user_id, comment_id) VALUES ($1, $2)
+     ON CONFLICT (user_id, comment_id) DO NOTHING RETURNING id`,
+    [userId, commentId]
+  ).then((r) => !!r);
+}
+
+/** Remove a comment like. No-op if absent. */
+export function unlikeComment(userId: string, commentId: string): Promise<unknown> {
+  return query(`DELETE FROM comment_likes WHERE user_id = $1 AND comment_id = $2`, [userId, commentId]);
+}
+
+export function getCommentLikeCount(commentId: string): Promise<number> {
+  return queryOne<{ n: string }>(
+    `SELECT COUNT(*)::int AS n FROM comment_likes WHERE comment_id = $1`,
+    [commentId]
+  ).then((r) => Number(r?.n ?? 0));
+}
+
+/** Like counts for many comments at once → Map<commentId, count>. */
+export async function getCommentLikeCounts(commentIds: string[]): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  if (commentIds.length === 0) return out;
+  const rows = await query<{ comment_id: string; n: string }>(
+    `SELECT comment_id, COUNT(*)::int AS n FROM comment_likes
+      WHERE comment_id = ANY($1::uuid[]) GROUP BY comment_id`,
+    [commentIds]
+  );
+  for (const r of rows) out.set(r.comment_id, Number(r.n));
+  return out;
+}
+
+/** Which of `commentIds` the user has liked → Set<commentId>. */
+export async function likedCommentIdsFor(userId: string | null, commentIds: string[]): Promise<Set<string>> {
+  const out = new Set<string>();
+  if (!userId || commentIds.length === 0) return out;
+  const rows = await query<{ comment_id: string }>(
+    `SELECT comment_id FROM comment_likes WHERE user_id = $1 AND comment_id = ANY($2::uuid[])`,
+    [userId, commentIds]
+  );
+  for (const r of rows) out.add(r.comment_id);
+  return out;
+}
+
+/** Comment count for many posts at once → Map<postId, count> (feed engagement signal). */
+export async function getCommentCounts(postIds: string[]): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  if (postIds.length === 0) return out;
+  const rows = await query<{ post_id: string; n: string }>(
+    `SELECT post_id, COUNT(*)::int AS n FROM comments
+      WHERE post_id = ANY($1::uuid[]) GROUP BY post_id`,
+    [postIds]
+  );
+  for (const r of rows) out.set(r.post_id, Number(r.n));
+  return out;
+}
+
+// ── Follow-graph helpers + profile tab data ─────────────────────────────────
+
+/** Which of `ids` the given user follows → Set (batch, for feed follow buttons). */
+export async function followingIdsFor(userId: string | null, ids: string[]): Promise<Set<string>> {
+  const out = new Set<string>();
+  if (!userId || ids.length === 0) return out;
+  const rows = await query<{ following_id: string }>(
+    `SELECT following_id FROM follows WHERE follower_id = $1 AND following_id = ANY($2::uuid[])`,
+    [userId, ids]
+  );
+  for (const r of rows) out.add(r.following_id);
+  return out;
+}
+
+export interface PublicUserRow {
+  id: string;
+  display_name: string | null;
+  handle: string | null;
+  name: string | null;
+  avatar: string | null;
+  bio: string | null;
+}
+
+const PUBLIC_USER_COLS = `u.id, u.display_name, u.handle, u.name, u.avatar, u.bio`;
+
+/** Users who follow `userId`, newest first. */
+export function listFollowers(userId: string, limit = 100): Promise<PublicUserRow[]> {
+  return query<PublicUserRow>(
+    `SELECT ${PUBLIC_USER_COLS}
+       FROM follows f JOIN users u ON u.id = f.follower_id
+      WHERE f.following_id = $1 AND u.suspended = FALSE
+      ORDER BY f.created_at DESC LIMIT $2`,
+    [userId, Math.min(Math.max(limit, 1), 200)]
+  );
+}
+
+/** Users `userId` follows, newest first. */
+export function listFollowing(userId: string, limit = 100): Promise<PublicUserRow[]> {
+  return query<PublicUserRow>(
+    `SELECT ${PUBLIC_USER_COLS}
+       FROM follows f JOIN users u ON u.id = f.following_id
+      WHERE f.follower_id = $1 AND u.suspended = FALSE
+      ORDER BY f.created_at DESC LIMIT $2`,
+    [userId, Math.min(Math.max(limit, 1), 200)]
+  );
+}
+
+export interface UserCommentRow {
+  id: string;
+  content: string;
+  created_at: Date;
+  post_id: string;
+  post_title: string;
+  post_slug: string;
+}
+
+/** A user's own comments (for the profile "Replies" tab), newest first, on published posts. */
+export function listCommentsByUser(userId: string, limit = 50): Promise<UserCommentRow[]> {
+  return query<UserCommentRow>(
+    `SELECT cm.id, cm.content, cm.created_at, cm.post_id, ct.title AS post_title, ct.slug AS post_slug
+       FROM comments cm JOIN content ct ON ct.id = cm.post_id
+      WHERE cm.user_id = $1 AND ct.status = 'published'
+      ORDER BY cm.created_at DESC LIMIT $2`,
+    [userId, Math.min(Math.max(limit, 1), 100)]
+  );
+}
+
+/** Published posts a user has liked (profile "Likes" tab), newest-liked first. */
+export function listLikedPostsByUser(userId: string, limit = 50): Promise<ContentWithCreator[]> {
+  return query<ContentWithCreator>(
+    `SELECT c.*, u.handle AS creator_handle, u.display_name AS creator_name,
+            u.avatar AS creator_avatar, u.verified AS creator_verified
+       FROM post_likes pl
+       JOIN content c ON c.id = pl.post_id
+       JOIN users u ON u.id = c.creator_id
+      WHERE pl.user_id = $1 AND c.status = 'published'
+      ORDER BY pl.created_at DESC LIMIT $2`,
+    [userId, Math.min(Math.max(limit, 1), 100)]
+  );
 }

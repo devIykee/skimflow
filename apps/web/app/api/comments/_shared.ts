@@ -4,8 +4,8 @@ import type { CommentWithAuthor } from "@/lib/store";
 
 export const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** Client-facing shape for a comment (top-level or reply). */
-export function serializeComment(c: CommentWithAuthor) {
+/** Client-facing shape for a comment (top-level or reply), with like data. */
+export function serializeComment(c: CommentWithAuthor, likes?: { count: number; liked: boolean }) {
   return {
     id: c.id,
     postId: c.post_id,
@@ -19,5 +19,7 @@ export function serializeComment(c: CommentWithAuthor) {
       avatarUrl: c.author_avatar,
     },
     replyCount: c.reply_count ?? 0,
+    likeCount: likes?.count ?? 0,
+    liked: likes?.liked ?? false,
   };
 }

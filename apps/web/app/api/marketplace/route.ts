@@ -1,5 +1,12 @@
 import { NextRequest } from "next/server";
-import { listPublished } from "@/lib/store";
+import { currentSession } from "@/lib/session";
+import {
+  followingIdsFor,
+  getCommentCounts,
+  getPostLikeCounts,
+  likedPostIdsFor,
+  listPublished,
+} from "@/lib/store";
 import type { ContentType } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -21,6 +28,20 @@ export async function GET(req: NextRequest) {
     limit: Number(sp.get("limit")) || 30,
     offset: Number(sp.get("offset")) || 0,
   });
+
+  // Engagement signals, batched. `liked`/`authorFollowing` only resolve for a
+  // signed-in viewer.
+  const ids = rows.map((r) => r.id);
+  const creatorIds = [...new Set(rows.map((r) => r.creator_id))];
+  const session = await currentSession();
+  const uid = session?.user?.id ?? null;
+  const [likeCounts, commentCounts, likedSet, followingSet] = await Promise.all([
+    getPostLikeCounts(ids),
+    getCommentCounts(ids),
+    likedPostIdsFor(uid, ids),
+    followingIdsFor(uid, creatorIds),
+  ]);
+
   return Response.json({
     items: rows.map((r) => ({
       id: r.id,
@@ -40,6 +61,11 @@ export async function GET(req: NextRequest) {
       sourcePlatform: r.source_platform,
       url: `/read/${r.slug}`,
       agentUrl: r.content_type === "agent-skills" ? `/read/${r.slug}/agent-skills.md` : null,
+      likeCount: likeCounts.get(r.id) ?? 0,
+      commentCount: commentCounts.get(r.id) ?? 0,
+      liked: likedSet.has(r.id),
+      creatorId: r.creator_id,
+      authorFollowing: followingSet.has(r.creator_id),
     })),
   });
 }

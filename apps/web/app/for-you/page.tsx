@@ -1,9 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { formatUsdc } from "@/lib/money";
 import ShareAgentButton from "@/components/ShareAgentButton";
+import LikeButton from "@/components/motion/LikeButton";
+import FollowButton from "@/components/FollowButton";
+import QuickComposer from "@/components/composer/QuickComposer";
+import ComposerFab from "@/components/composer/ComposerFab";
+import type { ComposerCallbacks, CreatedContent, OptimisticPost } from "@/components/composer/ComposerForm";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // "For You" — a social feed of pay-per-block content. Tabs strictly separate the
@@ -29,6 +34,11 @@ interface FeedItem {
   sourcePlatform?: string | null;
   url: string;
   agentUrl?: string | null;
+  likeCount?: number;
+  commentCount?: number;
+  liked?: boolean;
+  creatorId?: string;
+  authorFollowing?: boolean;
 }
 
 type TabKey = "all" | "article" | "book" | "agent-skills" | "picture";
@@ -91,6 +101,52 @@ export default function ForYouPage() {
   const sentinelRef = useRef<HTMLDivElement | null>(null);
 
   const searching = q.trim().length > 0;
+
+  // Composer wiring. New quick posts are articles, so only optimistically prepend
+  // them in the default browse view (All tab, no search); elsewhere the post
+  // still publishes and shows on the next load.
+  const composerCallbacks: ComposerCallbacks = useMemo(() => {
+    const defaultView = tab === "all" && !searching;
+    return {
+      onPending: (t: OptimisticPost) => {
+        if (!defaultView) return;
+        const item: FeedItem = {
+          id: t.tempId,
+          slug: "",
+          title: t.title,
+          summary: t.summary,
+          contentType: "article",
+          pricePerBlock: "0",
+          blockCount: 0,
+          creatorHandle: t.author.handle,
+          creatorName: t.author.name,
+          creatorAvatar: t.author.avatarUrl,
+          url: "#",
+        };
+        setItems((prev) => [item, ...prev]);
+      },
+      onSuccess: (tempId: string, c: CreatedContent) => {
+        setItems((prev) =>
+          prev.map((it) =>
+            it.id === tempId
+              ? {
+                  ...it,
+                  id: c.id,
+                  slug: c.slug,
+                  title: c.title,
+                  summary: c.summary,
+                  contentType: c.content_type,
+                  pricePerBlock: c.price_per_block,
+                  blockCount: c.block_count,
+                  url: `/read/${c.slug}`,
+                }
+              : it
+          )
+        );
+      },
+      onError: (tempId: string) => setItems((prev) => prev.filter((it) => it.id !== tempId)),
+    };
+  }, [tab, searching]);
 
   // Build the request URL for the current state at a given offset.
   const buildUrl = useCallback(
@@ -185,6 +241,10 @@ export default function ForYouPage() {
           Pay-per-block content for humans and agents. Read the free block, then unlock the rest in USDC on Arc.
         </p>
       </header>
+
+      {/* Frictionless composer: sticky on desktop, FAB on mobile (signed-in only). */}
+      <QuickComposer surface="for-you" callbacks={composerCallbacks} />
+      <ComposerFab surface="for-you" callbacks={composerCallbacks} />
 
       {/* Tabs — strictly separated content kinds. */}
       <div className="mb-4 flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
@@ -291,6 +351,21 @@ export default function ForYouPage() {
               )}
             </Link>
 
+            {/* Engagement signals (hidden on optimistic/pending items). */}
+            {!c.id.startsWith("temp-") && (
+              <div className="mb-1 flex items-center gap-4">
+                <LikeButton kind="post" id={c.id} initialLiked={!!c.liked} initialCount={c.likeCount ?? 0} size="sm" />
+                <Link
+                  href={c.url}
+                  className="inline-flex items-center gap-1 text-on-surface-variant transition-colors hover:text-primary"
+                  aria-label="Comments"
+                >
+                  <span className="material-symbols-outlined text-[18px]">chat_bubble</span>
+                  {(c.commentCount ?? 0) > 0 && <span className="font-body-sm text-[12px]">{c.commentCount}</span>}
+                </Link>
+              </div>
+            )}
+
             <div className="mt-auto flex items-center justify-between gap-2 border-t border-outline-variant/60 pt-3">
               {c.creatorHandle ? (
                 <Link
@@ -318,6 +393,9 @@ export default function ForYouPage() {
                 </div>
               )}
               <div className="flex items-center gap-2 font-data-mono text-[12px]">
+                {c.creatorId && !c.id.startsWith("temp-") && (
+                  <FollowButton userId={c.creatorId} name={c.creatorName} initialFollowing={!!c.authorFollowing} size="sm" />
+                )}
                 {c.contentType === "agent-skills" && (
                   <ShareAgentButton slug={c.slug} title={c.title} pricePerBlock={c.pricePerBlock} variant="card" />
                 )}
@@ -334,7 +412,11 @@ export default function ForYouPage() {
 
       {/* States */}
       {loading && items.length === 0 && (
-        <p className="mt-2 font-body-sm text-on-surface-variant">Loading…</p>
+        <div className="grid grid-cols-1 gap-gutter md:grid-cols-2">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <FeedSkeleton key={i} />
+          ))}
+        </div>
       )}
       {!loading && items.length === 0 && <EmptyState tab={tab} q={q.trim()} />}
 
@@ -346,6 +428,29 @@ export default function ForYouPage() {
       {!hasMore && items.length > 0 && (
         <p className="mt-6 text-center font-body-sm text-outline">You&apos;re all caught up.</p>
       )}
+    </div>
+  );
+}
+
+/** Pulse skeleton matching the feed card while the first page loads. */
+function FeedSkeleton() {
+  return (
+    <div className="card flex animate-pulse flex-col gap-3">
+      <div className="flex items-center justify-between">
+        <div className="h-4 w-16 rounded-full bg-surface-container-high" />
+        <div className="h-4 w-12 rounded bg-surface-container-high" />
+      </div>
+      <div className="h-5 w-3/4 rounded bg-surface-container-high" />
+      <div className="h-4 w-full rounded bg-surface-container-high" />
+      <div className="h-4 w-5/6 rounded bg-surface-container-high" />
+      <div className="mt-2 flex items-center gap-4">
+        <div className="h-4 w-10 rounded bg-surface-container-high" />
+        <div className="h-4 w-10 rounded bg-surface-container-high" />
+      </div>
+      <div className="mt-1 flex items-center justify-between border-t border-outline-variant/60 pt-3">
+        <div className="h-6 w-24 rounded-full bg-surface-container-high" />
+        <div className="h-4 w-16 rounded bg-surface-container-high" />
+      </div>
     </div>
   );
 }

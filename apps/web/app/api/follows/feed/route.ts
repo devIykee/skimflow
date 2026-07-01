@@ -1,6 +1,12 @@
 import { NextRequest } from "next/server";
 import { errorResponse, requireUser } from "@/lib/session";
-import { getFollowingFeed, getSuggestedCreators } from "@/lib/store";
+import {
+  getCommentCounts,
+  getFollowingFeed,
+  getPostLikeCounts,
+  getSuggestedCreators,
+  likedPostIdsFor,
+} from "@/lib/store";
 import { publicName } from "@/lib/creator-posts";
 import type { ContentWithCreator } from "@/lib/store";
 
@@ -42,12 +48,23 @@ export async function GET(req: NextRequest) {
     const limit = Math.min(Math.max(Number(sp.get("limit")) || 20, 1), 50);
 
     const rows = await getFollowingFeed(me.id, page, limit);
-    const posts = rows.map(serializeFeedRow);
+    const ids = rows.map((r) => r.id);
+    const [likeCounts, commentCounts, likedSet] = await Promise.all([
+      getPostLikeCounts(ids),
+      getCommentCounts(ids),
+      likedPostIdsFor(me.id, ids),
+    ]);
+    const posts = rows.map((c) => ({
+      ...serializeFeedRow(c),
+      likeCount: likeCounts.get(c.id) ?? 0,
+      commentCount: commentCounts.get(c.id) ?? 0,
+      liked: likedSet.has(c.id),
+    }));
 
     const payload: {
       posts: ReturnType<typeof serializeFeedRow>[];
       pagination: { page: number; limit: number; hasMore: boolean };
-      suggestions?: { id: string; name: string; handle: string | null; avatarUrl: string | null }[];
+      suggestions?: { id: string; name: string; handle: string | null; avatarUrl: string | null; bio: string | null }[];
     } = {
       posts,
       pagination: { page, limit, hasMore: rows.length === limit },
@@ -60,6 +77,7 @@ export async function GET(req: NextRequest) {
         name: publicName(s),
         handle: s.handle,
         avatarUrl: s.avatar,
+        bio: s.bio,
       }));
     }
 

@@ -192,6 +192,7 @@ function targetHref(n: Notification): string | null {
       return n.actor ? `/creator/${n.actor.id}` : null;
     case "post_comment":
     case "comment_reply":
+    case "post_like":
       return n.postSlug ? `/read/${n.postSlug}` : null;
     default:
       return n.link ?? null;
@@ -219,6 +220,14 @@ function NotificationText({ n }: { n: Notification }) {
     return (
       <p className="font-body-md text-[14px] text-on-surface">
         <span className="font-semibold">{actor}</span> replied to your comment
+      </p>
+    );
+  }
+  if (n.type === "post_like") {
+    return (
+      <p className="font-body-md text-[14px] text-on-surface">
+        <span className="font-semibold">{actor}</span> liked{" "}
+        <span className="font-semibold">{n.postTitle ?? "your post"}</span>
       </p>
     );
   }

@@ -1,13 +1,15 @@
 import { NextRequest } from "next/server";
-import { errorResponse, HttpError, requireUser } from "@/lib/session";
+import { currentSession, errorResponse, HttpError, requireUser } from "@/lib/session";
 import {
   createComment,
   createSocialNotification,
   deleteComment,
   getCommentById,
   getCommentCount,
+  getCommentLikeCounts,
   getCommentsByPost,
   getContentById,
+  likedCommentIdsFor,
 } from "@/lib/store";
 import { serializeComment, UUID_RE } from "../_shared";
 
@@ -33,8 +35,17 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
       getCommentsByPost(postId, page, limit),
       getCommentCount(postId),
     ]);
+    // Attach like counts (+ whether the viewer liked each), batched.
+    const ids = comments.map((c) => c.id);
+    const session = await currentSession();
+    const [counts, liked] = await Promise.all([
+      getCommentLikeCounts(ids),
+      likedCommentIdsFor(session?.user?.id ?? null, ids),
+    ]);
     return Response.json({
-      comments: comments.map(serializeComment),
+      comments: comments.map((c) =>
+        serializeComment(c, { count: counts.get(c.id) ?? 0, liked: liked.has(c.id) })
+      ),
       pagination: { page, limit, total, hasMore: comments.length === limit },
     });
   } catch (e) {

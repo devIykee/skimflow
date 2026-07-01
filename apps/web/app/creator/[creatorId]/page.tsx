@@ -1,9 +1,13 @@
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import Link from "next/link";
-import { getFollowerCount, listPublishedByCreator } from "@/lib/store";
+import {
+  countPublishedByCreator,
+  getFollowerCount,
+  getFollowingCount,
+  listPublishedByCreator,
+} from "@/lib/store";
 import { publicName, resolveCreator } from "@/lib/creator-posts";
-import FollowButton from "@/components/FollowButton";
+import ProfileClient, { type ProfilePost } from "./_components/ProfileClient";
 
 export const dynamic = "force-dynamic";
 
@@ -24,9 +28,7 @@ export async function generateMetadata({ params }: { params: Promise<{ creatorId
     title,
     description,
     alternates: {
-      // Canonicalize to the stable UUID even when reached via a handle.
       canonical: `/creator/${creator.id}`,
-      // Auto-discoverable RSS feed (RSS readers + RSSHub Radar pick this up).
       types: { "application/rss+xml": [{ url: feedHref(creator.id), title }] },
     },
     openGraph: { title, description, type: "profile", images: creator.avatar ? [{ url: creator.avatar }] : undefined },
@@ -38,81 +40,40 @@ export default async function CreatorProfilePage({ params }: { params: Promise<{
   const creator = await resolveCreator(creatorId).catch(() => null);
   if (!creator || creator.role === "admin" || creator.suspended) notFound();
 
-  const name = publicName(creator);
-  const [posts, followerCount] = await Promise.all([
+  const [rows, postCount, followerCount, followingCount] = await Promise.all([
     listPublishedByCreator(creator.id, { limit: FEED_LIMIT }),
+    countPublishedByCreator(creator.id),
     getFollowerCount(creator.id),
+    getFollowingCount(creator.id),
   ]);
 
-  return (
-    <div className="mx-auto max-w-max-width px-margin-mobile py-stack-lg md:px-margin-desktop">
-      {/* Creator header */}
-      <header className="mb-8 flex items-start gap-4">
-        {creator.avatar ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={creator.avatar} alt="" className="h-16 w-16 shrink-0 rounded-full object-cover" />
-        ) : (
-          <span className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-surface-container-high font-headline-sm text-[24px] font-semibold text-on-surface">
-            {name.charAt(0).toUpperCase()}
-          </span>
-        )}
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <h1 className="font-display-lg text-display-lg-mobile md:text-headline-md">{name}</h1>
-            {creator.verified && <span className="material-symbols-outlined text-[18px] text-secondary" title="Verified">verified</span>}
-            {/* Follow / Unfollow + follower count (hidden on your own profile). */}
-            <FollowButton userId={creator.id} initialFollowerCount={followerCount} showCount />
-            {/* Unobtrusive RSS subscribe link. */}
-            <a
-              href={feedHref(creator.id)}
-              title={`Subscribe to ${name}'s RSS feed`}
-              aria-label="RSS feed"
-              className="ml-auto inline-flex items-center gap-1 rounded-full border border-outline-variant px-2.5 py-1 text-[#ee802f] transition-colors hover:border-[#ee802f]"
-            >
-              <span className="material-symbols-outlined text-[16px]">rss_feed</span>
-              <span className="font-label-caps text-label-caps">RSS</span>
-            </a>
-          </div>
-          {creator.handle && <p className="font-body-sm text-body-sm text-on-surface-variant">@{creator.handle}</p>}
-          {creator.bio && <p className="mt-2 max-w-2xl font-body-md text-body-md text-on-surface-variant">{creator.bio}</p>}
-        </div>
-      </header>
+  const posts: ProfilePost[] = rows.map((p) => ({
+    id: p.id,
+    slug: p.slug,
+    title: p.title,
+    summary: p.summary,
+    contentType: p.content_type,
+    blockCount: p.block_count,
+    coverImageUrl: p.cover_image_url,
+    publishedAt: (p.published_at ?? p.created_at).toISOString(),
+    url: `/read/${p.slug}`,
+  }));
 
-      {/* Posts */}
-      <h2 className="mb-4 font-label-caps text-label-caps text-on-surface-variant">
-        {posts.length} published post{posts.length === 1 ? "" : "s"}
-      </h2>
-      {posts.length === 0 ? (
-        <p className="py-8 font-body-md text-on-surface-variant">No published posts yet.</p>
-      ) : (
-        <ul className="flex flex-col divide-y divide-outline-variant">
-          {posts.map((p) => {
-            const paid = p.block_count > 0;
-            const date = (p.published_at ?? p.created_at);
-            return (
-              <li key={p.id}>
-                <Link href={`/read/${p.slug}`} className="flex items-center gap-4 py-4 transition-colors hover:bg-surface-container-low/50">
-                  {p.cover_image_url && (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={p.cover_image_url} alt="" className="h-16 w-12 shrink-0 rounded object-cover" />
-                  )}
-                  <div className="min-w-0 flex-1">
-                    <div className="font-headline-sm text-[15px] font-semibold text-on-surface">{p.title}</div>
-                    {p.summary && <p className="line-clamp-1 font-body-sm text-[13px] text-on-surface-variant">{p.summary}</p>}
-                    <div className="mt-1 flex items-center gap-2 font-body-sm text-[11px] text-outline">
-                      <span className="pill text-[10px]">{p.content_type}</span>
-                      <span className={paid ? "text-primary" : "text-secondary"}>{paid ? "Paid" : "Free"}</span>
-                      <span>·</span>
-                      <time dateTime={new Date(date).toISOString()}>{new Date(date).toLocaleDateString()}</time>
-                    </div>
-                  </div>
-                  <span className="material-symbols-outlined shrink-0 text-outline">chevron_right</span>
-                </Link>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-    </div>
+  return (
+    <ProfileClient
+      creator={{
+        id: creator.id,
+        name: publicName(creator),
+        handle: creator.handle,
+        avatar: creator.avatar,
+        bio: creator.bio,
+        verified: creator.verified,
+      }}
+      posts={posts}
+      postCount={postCount}
+      followerCount={followerCount}
+      followingCount={followingCount}
+      rssUrl={feedHref(creator.id)}
+    />
   );
 }

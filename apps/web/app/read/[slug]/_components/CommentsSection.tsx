@@ -2,18 +2,22 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { AnimatePresence, motion } from "framer-motion";
 import { useSession } from "next-auth/react";
 import { useToast } from "@/components/Toaster";
 import { timeAgo } from "@/lib/time-ago";
+import LikeButton from "@/components/motion/LikeButton";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Comments — rendered below the reader on a post page. Top-level comments with
-// one level of inline replies. Auth required to post; optimistic add on submit
-// (reverted + toasted on error). Authors can delete their own comments.
+// one level of light inline replies. Auth required to post; optimistic add on
+// submit (reverted + toasted on error). Authors can delete their own comments.
+// Likes, animated entry, icon action bar, and collapse-after-3 make it feel live.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const MAX = 1000;
 const PAGE = 20;
+const VISIBLE_REPLIES = 3;
 
 interface Author {
   id: string;
@@ -30,6 +34,8 @@ interface Comment {
   createdAt: string;
   author: Author;
   replyCount: number;
+  likeCount: number;
+  liked: boolean;
 }
 
 export default function CommentsSection({ postId }: { postId: string }) {
@@ -63,7 +69,7 @@ export default function CommentsSection({ postId }: { postId: string }) {
         if (typeof d.pagination?.total === "number") setCount(d.pagination.total);
         setComments((prev) => (reset ? rows : [...prev, ...rows]));
       } catch {
-        /* leave whatever we have */
+        /* keep whatever we have */
       } finally {
         setLoading(false);
       }
@@ -75,12 +81,11 @@ export default function CommentsSection({ postId }: { postId: string }) {
     void load(true);
   }, [load]);
 
-  /** Bubble a total-count delta up from reply add/delete. */
   const adjustCount = useCallback((delta: number) => setCount((c) => Math.max(0, c + delta)), []);
 
   const addComment = useCallback(
     async (content: string) => {
-      const tempId = `temp-${pageRef.current}-${content.length}-${Math.round(performance.now())}`;
+      const tempId = `temp-${Date.now()}`;
       const optimistic: Comment = {
         id: tempId,
         postId,
@@ -89,6 +94,8 @@ export default function CommentsSection({ postId }: { postId: string }) {
         createdAt: new Date().toISOString(),
         author: meAuthor,
         replyCount: 0,
+        likeCount: 0,
+        liked: false,
       };
       setComments((prev) => [optimistic, ...prev]);
       setCount((c) => c + 1);
@@ -105,10 +112,9 @@ export default function CommentsSection({ postId }: { postId: string }) {
         setComments((prev) => prev.filter((c) => c.id !== tempId));
         setCount((c) => Math.max(0, c - 1));
         toast("error", "Couldn't post your comment. Try again.");
-        throw e; // keep the composer text
+        throw e;
       }
     },
-    // meAuthor is derived from session each render; depending on session is enough.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [postId, session, toast]
   );
@@ -117,7 +123,7 @@ export default function CommentsSection({ postId }: { postId: string }) {
     async (c: Comment) => {
       const snapshot = comments;
       setComments((prev) => prev.filter((x) => x.id !== c.id));
-      setCount((n) => Math.max(0, n - 1 - c.replyCount)); // replies cascade
+      setCount((n) => Math.max(0, n - 1 - c.replyCount));
       try {
         const r = await fetch(`/api/comments/${c.id}`, { method: "DELETE" });
         if (!r.ok) throw new Error(String(r.status));
@@ -130,13 +136,20 @@ export default function CommentsSection({ postId }: { postId: string }) {
     [comments, toast]
   );
 
+  const authed = status === "authenticated";
+
   return (
     <section className="mx-auto mt-12 max-w-3xl px-margin-mobile pb-24 md:px-margin-desktop">
       <h2 className="mb-5 font-headline-sm text-headline-sm">comments ({count})</h2>
 
       {/* Composer (or sign-in prompt). */}
-      {status === "authenticated" ? (
-        <Composer onSubmit={addComment} placeholder="Add a comment…" />
+      {authed ? (
+        <div className="flex gap-3">
+          <Avatar author={meAuthor} />
+          <div className="min-w-0 flex-1">
+            <Composer onSubmit={addComment} placeholder="Add your take…" />
+          </div>
+        </div>
       ) : status === "loading" ? null : (
         <p className="rounded-xl border border-outline-variant bg-surface-container-lowest px-4 py-3 font-body-sm text-body-sm text-on-surface-variant">
           <Link href="/login" className="text-primary hover:underline">
@@ -152,19 +165,23 @@ export default function CommentsSection({ postId }: { postId: string }) {
           <p className="font-body-sm text-on-surface-variant">Loading comments…</p>
         )}
         {!loading && comments.length === 0 && (
-          <p className="font-body-sm text-on-surface-variant">No comments yet. Be the first.</p>
+          <p className="font-body-sm text-on-surface-variant">
+            {authed ? "Be the first to reply." : "No comments yet."}
+          </p>
         )}
-        {comments.map((c) => (
-          <CommentItem
-            key={c.id}
-            comment={c}
-            me={me}
-            meAuthor={meAuthor}
-            authed={status === "authenticated"}
-            onDelete={() => deleteTopLevel(c)}
-            onReplyCountDelta={adjustCount}
-          />
-        ))}
+        <AnimatePresence initial={false}>
+          {comments.map((c) => (
+            <CommentItem
+              key={c.id}
+              comment={c}
+              me={me}
+              meAuthor={meAuthor}
+              authed={authed}
+              onDelete={() => deleteTopLevel(c)}
+              onReplyCountDelta={adjustCount}
+            />
+          ))}
+        </AnimatePresence>
       </div>
 
       {hasMore && (
@@ -200,6 +217,7 @@ function CommentItem({
   const toast = useToast();
   const isTemp = comment.id.startsWith("temp-");
   const [expanded, setExpanded] = useState(false);
+  const [showAll, setShowAll] = useState(false);
   const [replies, setReplies] = useState<Comment[]>([]);
   const [repliesLoaded, setRepliesLoaded] = useState(false);
   const [loadingReplies, setLoadingReplies] = useState(false);
@@ -214,7 +232,7 @@ function CommentItem({
       setReplies(d.replies ?? []);
       setRepliesLoaded(true);
     } catch {
-      /* keep collapsed-ish */
+      /* ignore */
     } finally {
       setLoadingReplies(false);
     }
@@ -228,7 +246,7 @@ function CommentItem({
 
   const addReply = useCallback(
     async (content: string) => {
-      const tempId = `temp-r-${Math.round(performance.now())}`;
+      const tempId = `temp-r-${Date.now()}`;
       const optimistic: Comment = {
         id: tempId,
         postId: comment.postId,
@@ -237,6 +255,8 @@ function CommentItem({
         createdAt: new Date().toISOString(),
         author: meAuthor,
         replyCount: 0,
+        likeCount: 0,
+        liked: false,
       };
       setReplies((prev) => [...prev, optimistic]);
       setReplyCount((n) => n + 1);
@@ -281,22 +301,22 @@ function CommentItem({
     [replies, onReplyCountDelta, toast]
   );
 
+  const shownReplies = showAll ? replies : replies.slice(0, VISIBLE_REPLIES);
+  const hiddenReplies = replies.length - shownReplies.length;
+
   return (
-    <div>
-      <CommentBody
-        comment={comment}
-        canDelete={!isTemp && me === comment.author.id}
-        onDelete={onDelete}
-      >
-        {/* Actions */}
+    <motion.div
+      layout
+      initial={{ opacity: 0, y: -6 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.2, ease: "easeOut" }}
+    >
+      <CommentBody comment={comment} canDelete={!isTemp && me === comment.author.id} onDelete={onDelete}>
         <div className="mt-1 flex items-center gap-4">
+          <LikeButton kind="comment" id={comment.id} initialLiked={comment.liked} initialCount={comment.likeCount} size="sm" />
           {authed && !isTemp && (
-            <button
-              onClick={() => setReplying((v) => !v)}
-              className="font-label-caps text-label-caps text-on-surface-variant hover:text-primary"
-            >
-              reply
-            </button>
+            <ActionButton icon="reply" label="reply" onClick={() => setReplying((v) => !v)} />
           )}
           {replyCount > 0 && (
             <button
@@ -310,23 +330,41 @@ function CommentItem({
       </CommentBody>
 
       {(expanded || replying) && (
-        <div className="ml-4 mt-3 flex flex-col gap-4 border-l border-outline-variant pl-4">
+        <div className="ml-4 mt-3 flex flex-col gap-4 border-l-2 border-outline-variant/60 pl-4">
           {loadingReplies && <p className="font-body-sm text-[13px] text-on-surface-variant">Loading replies…</p>}
-          {replies.map((r) => (
-            <CommentBody
-              key={r.id}
-              comment={r}
-              canDelete={!r.id.startsWith("temp-") && me === r.author.id}
-              onDelete={() => deleteReply(r)}
-            />
-          ))}
+          <AnimatePresence initial={false}>
+            {shownReplies.map((r) => (
+              <motion.div
+                key={r.id}
+                layout
+                initial={{ opacity: 0, y: -4 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.18, ease: "easeOut" }}
+              >
+                <CommentBody comment={r} canDelete={!r.id.startsWith("temp-") && me === r.author.id} onDelete={() => deleteReply(r)}>
+                  <div className="mt-1">
+                    <LikeButton kind="comment" id={r.id} initialLiked={r.liked} initialCount={r.likeCount} size="sm" />
+                  </div>
+                </CommentBody>
+              </motion.div>
+            ))}
+          </AnimatePresence>
 
-          {/* Reply composer at the bottom of the expanded thread. */}
+          {hiddenReplies > 0 && (
+            <button
+              onClick={() => setShowAll(true)}
+              className="self-start font-label-caps text-label-caps text-primary hover:underline"
+            >
+              Show {hiddenReplies} more repl{hiddenReplies === 1 ? "y" : "ies"}
+            </button>
+          )}
+
           {replying && authed && (
             <Composer
               compact
               autoFocus
-              placeholder="Write a reply…"
+              placeholder={`Reply to ${comment.author.name ?? comment.author.handle ?? "this comment"}…`}
               onSubmit={async (v) => {
                 await addReply(v);
                 if (!expanded) setExpanded(true);
@@ -336,11 +374,10 @@ function CommentItem({
           )}
         </div>
       )}
-    </div>
+    </motion.div>
   );
 }
 
-/** Avatar + author line + content, with an optional delete button + children (actions). */
 function CommentBody({
   comment,
   canDelete,
@@ -352,33 +389,28 @@ function CommentBody({
   onDelete: () => void;
   children?: React.ReactNode;
 }) {
-  const a = comment.author;
   return (
     <div className="flex gap-3">
-      {a.avatarUrl ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={a.avatarUrl} alt="" className="h-8 w-8 shrink-0 rounded-full object-cover" />
-      ) : (
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 font-label-caps text-[12px] text-primary">
-          {(a.name ?? a.handle ?? "?").trim().charAt(0).toUpperCase() || "?"}
-        </span>
-      )}
+      <Avatar author={comment.author} size="sm" />
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
-          <Link href={`/creator/${a.id}`} className="flex items-baseline gap-1.5 hover:opacity-90">
+          <Link href={`/creator/${comment.author.id}`} className="flex items-baseline gap-1.5 hover:opacity-90">
             <span className="font-body-sm text-[14px] font-semibold text-on-surface">
-              {a.name ?? a.handle ?? "User"}
+              {comment.author.name ?? comment.author.handle ?? "User"}
             </span>
-            {a.handle && <span className="font-data-mono text-[12px] text-outline">@{a.handle}</span>}
+            {comment.author.handle && (
+              <span className="font-data-mono text-[12px] text-outline">@{comment.author.handle}</span>
+            )}
           </Link>
           <span className="font-body-sm text-[12px] text-outline">· {timeAgo(comment.createdAt)}</span>
           {canDelete && (
             <button
               onClick={onDelete}
               title="Delete"
-              className="ml-auto font-label-caps text-label-caps text-outline transition-colors hover:text-primary"
+              aria-label="Delete comment"
+              className="group/del ml-auto inline-flex items-center text-outline transition-colors hover:text-primary"
             >
-              delete
+              <span className="material-symbols-outlined text-[16px]">delete</span>
             </button>
           )}
         </div>
@@ -388,6 +420,38 @@ function CommentBody({
         {children}
       </div>
     </div>
+  );
+}
+
+/** Icon action with a label that expands on hover (keeps the row uncluttered). */
+function ActionButton({ icon, label, onClick }: { icon: string; label: string; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      aria-label={label}
+      className="group/act inline-flex items-center gap-1 text-on-surface-variant transition-colors hover:text-primary"
+    >
+      <span className="material-symbols-outlined text-[18px]">{icon}</span>
+      <span className="max-w-0 overflow-hidden whitespace-nowrap font-label-caps text-label-caps opacity-0 transition-all duration-150 group-hover/act:max-w-[64px] group-hover/act:opacity-100">
+        {label}
+      </span>
+    </button>
+  );
+}
+
+function Avatar({ author, size = "md" }: { author: Author; size?: "sm" | "md" }) {
+  const dim = size === "sm" ? "h-8 w-8" : "h-9 w-9";
+  if (author.avatarUrl) {
+    // eslint-disable-next-line @next/next/no-img-element
+    return <img src={author.avatarUrl} alt="" className={`${dim} shrink-0 rounded-full object-cover`} />;
+  }
+  const initial = (author.name ?? author.handle ?? "?").trim().charAt(0).toUpperCase() || "?";
+  return (
+    <span
+      className={`${dim} flex shrink-0 items-center justify-center rounded-full bg-primary/10 font-label-caps text-[12px] text-primary`}
+    >
+      {initial}
+    </span>
   );
 }
 
@@ -411,9 +475,9 @@ function Composer({
     setSubmitting(true);
     try {
       await onSubmit(v);
-      setValue(""); // cleared only on success
+      setValue("");
     } catch {
-      /* onSubmit already toasted; keep the text so the user can retry */
+      /* onSubmit toasted; keep the text so the user can retry */
     } finally {
       setSubmitting(false);
     }
@@ -424,6 +488,13 @@ function Composer({
       <textarea
         value={value}
         onChange={(e) => setValue(e.target.value.slice(0, MAX))}
+        onKeyDown={(e) => {
+          // Enter submits; Shift+Enter (or empty) inserts a newline.
+          if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            void submit();
+          }
+        }}
         maxLength={MAX}
         rows={compact ? 2 : 3}
         autoFocus={autoFocus}
@@ -437,7 +508,7 @@ function Composer({
         <button
           onClick={submit}
           disabled={!value.trim() || submitting}
-          className="inline-flex items-center gap-1 rounded-full bg-primary px-4 py-1.5 font-label-caps text-label-caps text-on-primary transition-colors hover:bg-primary/90 disabled:opacity-60"
+          className="inline-flex items-center gap-1 rounded-full bg-primary px-4 py-1.5 font-label-caps text-label-caps text-on-primary transition-transform hover:bg-primary/90 active:scale-[0.97] disabled:opacity-60"
         >
           {submitting && <span className="material-symbols-outlined animate-spin text-[16px]">progress_activity</span>}
           {compact ? "Reply" : "Post"}
