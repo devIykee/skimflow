@@ -73,6 +73,12 @@ export default async function ReaderPage({ params }: { params: Promise<{ slug: s
   void incrementView(content.id);
   const chunks = await getChunks(content.id);
 
+  // A free post (price_per_block == 0) is readable in full — there's nothing to
+  // pay, so every block's text is sent and the paywall chrome is skipped. This is
+  // distinct from a chunk's `is_free` flag (which only marks the free *preview*
+  // block); price 0 makes the WHOLE piece free regardless of per-block flags.
+  const isFreePost = Number(content.price_per_block) <= 0;
+
   // The creator (and admins) read in full, free — so we hand the client every
   // block's text up front and skip the paywall. We keep two distinct flags:
   //   • isAuthor — viewer actually wrote this piece (gets the "your piece / edit"
@@ -126,6 +132,7 @@ export default async function ReaderPage({ params }: { params: Promise<{ slug: s
         <BookReader
           slug={content.slug}
           title={content.title}
+          creatorId={content.creator_id}
           creatorHandle={content.creator_handle}
           pricePerBlock={content.price_per_block}
           isOwner={isOwner}
@@ -136,7 +143,7 @@ export default async function ReaderPage({ params }: { params: Promise<{ slug: s
             blockIndex: c.block_index,
             isFree: c.is_free,
             chapterId: c.chapter_id,
-            text: c.is_free || isOwner ? c.text : null,
+            text: c.is_free || isOwner || isFreePost ? c.text : null,
           }))}
         />
       </>
@@ -156,6 +163,7 @@ export default async function ReaderPage({ params }: { params: Promise<{ slug: s
         slug={content.slug}
         title={content.title}
         summary={content.summary}
+        creatorId={content.creator_id}
         creatorHandle={content.creator_handle}
         contentType={content.content_type}
         pricePerBlock={content.price_per_block}
@@ -171,7 +179,7 @@ export default async function ReaderPage({ params }: { params: Promise<{ slug: s
           // For picture posts `text` holds the (gated) image URL; the caption is an
           // always-visible label, so it's sent regardless of lock state. Owners
           // receive every block's text up front (they read their own work free).
-          text: c.is_free || isOwner ? c.text : null,
+          text: c.is_free || isOwner || isFreePost ? c.text : null,
           caption: c.caption,
         }))}
       />

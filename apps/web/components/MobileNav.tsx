@@ -5,15 +5,16 @@ import { usePathname } from "next/navigation";
 
 /**
  * Mobile bottom navigation ("sandwich bar"). Mirrors the desktop header nav
- * (For You / Docs) plus Dashboard (which on desktop lives in the footer +
- * UserMenu). Home is reachable via the Skimflow logo, so it's omitted here.
- * Hidden at md+ where the top nav takes over.
+ * (For You / Following / Docs) plus Profile (the signed-in user's own posts).
+ * The Creator Dashboard lives in the profile dropdown (UserMenu), not here.
+ * Home is reachable via the Skimflow logo, so it's omitted. Hidden at md+ where
+ * the top nav takes over.
  */
 const ITEMS: { href: string; label: string; icon: string }[] = [
   { href: "/for-you", label: "For You", icon: "auto_awesome" },
   { href: "/following", label: "Following", icon: "group" },
   { href: "/docs", label: "Docs", icon: "menu_book" },
-  { href: "/dashboard", label: "Dashboard", icon: "dashboard" },
+  { href: "/profile", label: "Profile", icon: "person" },
 ];
 
 export default function MobileNav() {

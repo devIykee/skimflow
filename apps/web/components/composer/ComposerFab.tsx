@@ -20,6 +20,11 @@ export default function ComposerFab({
 }) {
   const { status } = useSession();
   const [open, setOpen] = useState(false);
+  // Visual-viewport box (mobile keyboard aware). When the on-screen keyboard
+  // opens, the visual viewport shrinks while the layout viewport does not — so we
+  // size the fixed overlay to the visual viewport, keeping the bottom-sheet (and
+  // its Submit button) above the keyboard instead of hidden behind it.
+  const [vv, setVv] = useState<{ height: number; offsetTop: number } | null>(null);
 
   // Lock body scroll while the composer is open.
   useEffect(() => {
@@ -31,6 +36,22 @@ export default function ComposerFab({
     return () => {
       document.body.style.overflow = prev;
       document.removeEventListener("keydown", onEsc);
+    };
+  }, [open]);
+
+  // Track the visual viewport while open (keyboard show/hide, pinch, scroll).
+  useEffect(() => {
+    if (!open || typeof window === "undefined") return;
+    const vp = window.visualViewport;
+    if (!vp) return;
+    const update = () => setVv({ height: vp.height, offsetTop: vp.offsetTop });
+    update();
+    vp.addEventListener("resize", update);
+    vp.addEventListener("scroll", update);
+    return () => {
+      vp.removeEventListener("resize", update);
+      vp.removeEventListener("scroll", update);
+      setVv(null);
     };
   }, [open]);
 
@@ -57,6 +78,7 @@ export default function ComposerFab({
             exit={{ opacity: 0 }}
             transition={{ duration: 0.15 }}
             onClick={() => setOpen(false)}
+            style={vv ? { top: vv.offsetTop, height: vv.height, bottom: "auto" } : undefined}
             className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 md:items-start md:p-4 md:pt-[12vh]"
           >
             <motion.div
@@ -66,9 +88,9 @@ export default function ComposerFab({
               exit={{ opacity: 0, y: 24, scale: 0.98 }}
               transition={{ duration: 0.2, ease: "easeOut" }}
               onClick={(e) => e.stopPropagation()}
-              className="w-full rounded-t-2xl border border-outline-variant bg-surface shadow-xl md:max-w-xl md:rounded-2xl"
+              className="flex max-h-full w-full flex-col overflow-hidden rounded-t-2xl border border-outline-variant bg-surface shadow-xl md:max-w-xl md:rounded-2xl"
             >
-              <div className="flex items-center justify-between border-b border-outline-variant px-4 py-3">
+              <div className="flex shrink-0 items-center justify-between border-b border-outline-variant px-4 py-3">
                 <span className="font-headline-sm text-[15px] font-semibold">New post</span>
                 <button
                   onClick={() => setOpen(false)}
@@ -78,7 +100,7 @@ export default function ComposerFab({
                   <span className="material-symbols-outlined text-[20px]">close</span>
                 </button>
               </div>
-              <div className="px-4 py-4">
+              <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
                 <ComposerForm
                   surface={surface}
                   callbacks={callbacks}

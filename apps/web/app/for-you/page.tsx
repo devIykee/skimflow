@@ -64,10 +64,11 @@ function normalizeSearchRow(r: {
   title: string;
   summary: string;
   excerpt?: string;
-  content_type: string;
-  price_per_block: string;
-  creator_handle: string | null;
-  creator_name: string | null;
+  contentType: string;
+  pricePerBlock: string;
+  creatorId?: string;
+  creatorHandle: string | null;
+  creatorName: string | null;
   url?: string;
 }): FeedItem {
   return {
@@ -76,10 +77,11 @@ function normalizeSearchRow(r: {
     title: r.title,
     summary: r.summary,
     excerpt: r.excerpt,
-    contentType: r.content_type,
-    pricePerBlock: r.price_per_block,
-    creatorHandle: r.creator_handle,
-    creatorName: r.creator_name,
+    contentType: r.contentType,
+    pricePerBlock: r.pricePerBlock,
+    creatorId: r.creatorId,
+    creatorHandle: r.creatorHandle,
+    creatorName: r.creatorName,
     url: r.url ?? `/read/${r.slug}`,
   };
 }
@@ -401,18 +403,18 @@ export default function ForYouPage() {
             )}
 
             <div className="mt-auto flex items-center justify-between gap-2 border-t border-outline-variant/60 pt-3">
-              {c.creatorHandle ? (
+              {c.creatorId || c.creatorHandle ? (
                 <Link
-                  href={`/creator/${c.creatorHandle}`}
+                  href={`/creator/${c.creatorId ?? c.creatorHandle}`}
                   className="flex min-w-0 items-center gap-2 hover:opacity-90"
-                  title={`View ${c.creatorName ?? `@${c.creatorHandle}`}'s profile`}
+                  title={`View ${c.creatorName ?? (c.creatorHandle ? `@${c.creatorHandle}` : "creator")}'s profile`}
                 >
                   <Avatar name={c.creatorName ?? c.creatorHandle} src={c.creatorAvatar} />
                   <span className="flex min-w-0 flex-col leading-tight">
                     {c.creatorName && (
                       <span className="truncate font-body-sm text-[12px] text-on-surface">{c.creatorName}</span>
                     )}
-                    <span className="truncate font-data-mono text-[11px] text-outline hover:text-primary">@{c.creatorHandle}</span>
+                    <span className="truncate font-data-mono text-[11px] text-outline hover:text-primary">@{c.creatorHandle ?? "unknown"}</span>
                   </span>
                 </Link>
               ) : (

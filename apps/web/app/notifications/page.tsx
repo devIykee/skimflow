@@ -199,19 +199,48 @@ function targetHref(n: Notification): string | null {
   }
 }
 
+/** The actor's name, deep-linked to their profile when we have an actor id.
+ *  The whole notification row is a <button>, so we can't nest an <a> here; we
+ *  navigate via the router and stop propagation so tapping the name opens the
+ *  profile even though the row's own handler would navigate elsewhere. */
+function ActorName({ actor }: { actor: Actor | null }) {
+  const router = useRouter();
+  const label = actor?.name || (actor?.handle ? `@${actor.handle}` : "Someone");
+  if (!actor?.id) return <span className="font-semibold">{label}</span>;
+  const go = (e: React.SyntheticEvent) => {
+    e.stopPropagation();
+    router.push(`/creator/${actor.id}`);
+  };
+  return (
+    <span
+      role="link"
+      tabIndex={0}
+      onClick={go}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          go(e);
+        }
+      }}
+      className="cursor-pointer font-semibold hover:text-primary hover:underline"
+    >
+      {label}
+    </span>
+  );
+}
+
 function NotificationText({ n }: { n: Notification }) {
-  const actor = n.actor?.name || (n.actor?.handle ? `@${n.actor.handle}` : "Someone");
   if (n.type === "new_follower") {
     return (
       <p className="font-body-md text-[14px] text-on-surface">
-        <span className="font-semibold">{actor}</span> started following you
+        <ActorName actor={n.actor} /> started following you
       </p>
     );
   }
   if (n.type === "post_comment") {
     return (
       <p className="font-body-md text-[14px] text-on-surface">
-        <span className="font-semibold">{actor}</span> commented on{" "}
+        <ActorName actor={n.actor} /> commented on{" "}
         <span className="font-semibold">{n.postTitle ?? "your post"}</span>
       </p>
     );
@@ -219,14 +248,14 @@ function NotificationText({ n }: { n: Notification }) {
   if (n.type === "comment_reply") {
     return (
       <p className="font-body-md text-[14px] text-on-surface">
-        <span className="font-semibold">{actor}</span> replied to your comment
+        <ActorName actor={n.actor} /> replied to your comment
       </p>
     );
   }
   if (n.type === "post_like") {
     return (
       <p className="font-body-md text-[14px] text-on-surface">
-        <span className="font-semibold">{actor}</span> liked{" "}
+        <ActorName actor={n.actor} /> liked{" "}
         <span className="font-semibold">{n.postTitle ?? "your post"}</span>
       </p>
     );

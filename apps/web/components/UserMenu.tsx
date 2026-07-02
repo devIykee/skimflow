@@ -109,6 +109,7 @@ export default function UserMenu() {
               </div>
 
               <div className="border-t border-outline-variant py-1">
+                <MenuLink href="/profile" icon="person" label="Your profile" onClick={() => setOpen(false)} />
                 <MenuLink
                   href="/notifications"
                   icon="notifications"

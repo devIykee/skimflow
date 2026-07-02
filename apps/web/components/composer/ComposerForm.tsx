@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { motion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
+import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useToast } from "@/components/Toaster";
 
@@ -15,6 +16,11 @@ import { useToast } from "@/components/Toaster";
 
 const LIMIT = 2000;
 const COUNTER_AT = Math.floor(LIMIT * 0.8);
+
+// Where a Paid draft is stashed for the dashboard editor to pick up (see
+// ContentManager's ?compose=1 handler). Quick posts are always FREE; paid posts
+// need pricing/block config, which lives in the dashboard.
+const PAID_HANDOFF_KEY = "skimflow:composer:handoff";
 
 const PROMPTS = [
   "What are you thinking about right now?",
@@ -77,12 +83,15 @@ export default function ComposerForm({
 }) {
   const { data: session } = useSession();
   const toast = useToast();
+  const router = useRouter();
   const draftKey = `skimflow:composer:${surface}`;
 
   const [text, setText] = useState("");
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [failedText, setFailedText] = useState<string | null>(null);
+  // Paid mode routes to the dashboard; we confirm first so it isn't a surprise.
+  const [showPaidConfirm, setShowPaidConfirm] = useState(false);
   const taRef = useRef<HTMLTextAreaElement>(null);
 
   // Session-stable rotating placeholder (same prompt for the whole session).
@@ -196,6 +205,23 @@ export default function ComposerForm({
     }
   }
 
+  // Paid path: don't publish here. Stash whatever they've drafted and hand off to
+  // the Creator Dashboard editor (prefilled body) to set pricing / block structure.
+  function goPaid() {
+    const raw = text.trim();
+    let body = raw;
+    if (imageUrl) body += `\n![image](${imageUrl})`;
+    try {
+      localStorage.setItem(PAID_HANDOFF_KEY, JSON.stringify({ body }));
+      localStorage.removeItem(draftKey); // content now lives in the dashboard draft
+    } catch {
+      /* ignore storage errors — we still route to the dashboard */
+    }
+    setShowPaidConfirm(false);
+    onClose?.();
+    router.push("/dashboard?compose=1");
+  }
+
   const initial = (session?.user?.name ?? "?").trim().charAt(0).toUpperCase() || "?";
 
   return (
@@ -212,6 +238,26 @@ export default function ComposerForm({
         ))}
 
       <div className="min-w-0 flex-1">
+        {/* Free / Paid — Free posts publish here; Paid routes to the dashboard to
+            configure pricing and blocks. Mirrors the app's segmented toggles. */}
+        <div className="mb-3 inline-flex rounded-lg border border-outline-variant bg-surface-container-low p-1">
+          <span
+            aria-current="true"
+            className="flex items-center gap-1.5 rounded-md bg-surface px-3 py-1.5 font-label-lg text-label-lg text-primary shadow-sm"
+          >
+            <span className="material-symbols-outlined text-[16px]">lock_open</span>
+            Free
+          </span>
+          <button
+            type="button"
+            onClick={() => setShowPaidConfirm(true)}
+            className="flex items-center gap-1.5 rounded-md px-3 py-1.5 font-label-lg text-label-lg text-on-surface-variant transition-colors hover:text-on-surface"
+          >
+            <span className="material-symbols-outlined text-[16px]">paid</span>
+            Paid
+          </button>
+        </div>
+
         <textarea
           ref={taRef}
           value={text}
@@ -244,7 +290,10 @@ export default function ComposerForm({
           </div>
         )}
 
-        <div className="mt-2 flex items-center justify-between gap-3">
+        {/* Action row pinned to the bottom of the (scrollable) composer panel so
+            the Post button is always reachable — notably on mobile with the
+            on-screen keyboard open, which shrinks the visible viewport. */}
+        <div className="sticky bottom-0 z-10 mt-2 flex items-center justify-between gap-3 border-t border-outline-variant/60 bg-surface pb-1 pt-3">
           <div className="flex items-center gap-3">
             {text.length >= COUNTER_AT && (
               <span
@@ -292,6 +341,65 @@ export default function ComposerForm({
           </div>
         </div>
       </div>
+
+      {/* Paid → dashboard confirmation. Explains the move before routing so it's
+          never a surprise; Cancel keeps them here on the (free) composer. */}
+      <AnimatePresence>
+        {showPaidConfirm && (
+          <motion.div
+            key="paid-backdrop"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.15 }}
+            onClick={() => setShowPaidConfirm(false)}
+            className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40 p-4"
+          >
+            <motion.div
+              key="paid-panel"
+              initial={{ opacity: 0, scale: 0.96, y: 8 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: 8 }}
+              transition={{ duration: 0.16, ease: "easeOut" }}
+              onClick={(e: React.MouseEvent) => e.stopPropagation()}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="paid-confirm-title"
+              className="w-full max-w-sm rounded-2xl border border-outline-variant bg-surface p-5 shadow-xl"
+            >
+              <div className="mb-3 flex items-center gap-2.5">
+                <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                  <span className="material-symbols-outlined text-[20px]">paid</span>
+                </span>
+                <h2 id="paid-confirm-title" className="font-headline-sm text-[15px] font-semibold">
+                  Set up a paid post
+                </h2>
+              </div>
+              <p className="mb-5 font-body-md text-body-md text-on-surface-variant">
+                Paid posts are configured in the Creator Dashboard, where you set the price and block
+                structure. We&apos;ll take you there now — anything you&apos;ve written will be waiting in the editor.
+              </p>
+              <div className="flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowPaidConfirm(false)}
+                  className="rounded-full px-4 py-1.5 font-label-caps text-label-caps text-on-surface-variant transition-colors hover:text-on-surface"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={goPaid}
+                  className="inline-flex items-center gap-1 rounded-full bg-primary px-4 py-1.5 font-label-caps text-label-caps text-on-primary transition-colors hover:bg-primary/90"
+                >
+                  Continue to dashboard
+                  <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

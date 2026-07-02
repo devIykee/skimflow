@@ -773,6 +773,7 @@ export interface SearchResult {
   summary: string;
   content_type: ContentType;
   price_per_block: string;
+  creator_id: string;
   creator_handle: string | null;
   creator_name: string | null;
   rank: number;
@@ -783,7 +784,7 @@ export interface SearchResult {
 export function searchContent(q: string, limit = 30, offset = 0): Promise<SearchResult[]> {
   return query<SearchResult>(
     `SELECT c.id, c.slug, c.title, c.summary, c.content_type, c.price_per_block,
-            u.handle AS creator_handle, u.display_name AS creator_name,
+            c.creator_id, u.handle AS creator_handle, u.display_name AS creator_name,
             ts_rank(c.search_tsv, websearch_to_tsquery('english', $1)) AS rank,
             ts_headline('english', COALESCE(NULLIF(c.summary,''), c.title),
               websearch_to_tsquery('english', $1),

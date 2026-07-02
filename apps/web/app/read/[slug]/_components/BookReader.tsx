@@ -28,6 +28,7 @@ interface PageView {
 interface Props {
   slug: string;
   title: string;
+  creatorId?: string | null;
   creatorHandle: string | null;
   pricePerBlock: string;
   chapters: ChapterMeta[];
@@ -47,7 +48,7 @@ const SWIPE_THRESHOLD = 50;
  * chrome (top bar + bottom progress). Advancing into a not-yet-paid page fires a
  * silent session-key payment invisibly; the first page is always free.
  */
-export default function BookReader({ slug, title, creatorHandle, pricePerBlock, chapters, pages, isOwner = false }: Props) {
+export default function BookReader({ slug, title, creatorId, creatorHandle, pricePerBlock, chapters, pages, isOwner = false }: Props) {
   const storageKey = `skimflow_reader_${slug}`;
   const posKey = `skimflow_reader_pos_${slug}`;
   const bookmarksKey = `skimflow_reader_bookmarks_${slug}`;
@@ -190,7 +191,9 @@ export default function BookReader({ slug, title, creatorHandle, pricePerBlock, 
     }
   };
 
-  const payable = pages.filter((p) => !p.isFree);
+  // Free book (price 0): every page is free — nothing payable, no paywall chrome.
+  const isFreePost = Number(pricePerBlock) <= 0;
+  const payable = isFreePost ? [] : pages.filter((p) => !p.isFree);
   const unlockedPayable = payable.filter((p) => unlocked[p.blockIndex] !== undefined).length;
   const allUnlocked = payable.length > 0 && unlockedPayable === payable.length;
   const wholeDisplay = useMemo(() => wholePiecePrice(pricePerBlock, payable.length), [pricePerBlock, payable.length]);
@@ -202,12 +205,12 @@ export default function BookReader({ slug, title, creatorHandle, pricePerBlock, 
   }, [chapters]);
 
   const isPageUnlocked = useCallback(
-    (p: PageView) => isOwner || p.isFree || unlocked[p.blockIndex] !== undefined,
-    [unlocked, isOwner]
+    (p: PageView) => isOwner || isFreePost || p.isFree || unlocked[p.blockIndex] !== undefined,
+    [unlocked, isOwner, isFreePost]
   );
 
   function pageText(p: PageView): string | null {
-    return p.isFree || isOwner ? p.text : unlocked[p.blockIndex] ?? null;
+    return p.isFree || isOwner || isFreePost ? p.text : unlocked[p.blockIndex] ?? null;
   }
 
   async function quoteBlock(blockIndex: number) {
@@ -597,14 +600,23 @@ export default function BookReader({ slug, title, creatorHandle, pricePerBlock, 
           </div>
           <span className="flex items-center gap-1.5 font-data-mono">
             Page {current + 1} of {pages.length}
-            {payWallet && !isOwner && (
+            {payWallet && !isOwner && !isFreePost && (
               <>
                 <span aria-hidden>·</span>
                 <ReadingFuel variant="inline" pricePerBlock={pricePerBlock} onTopUp={() => setShowSetup(true)} />
               </>
             )}
           </span>
-          <span className="hidden text-outline sm:inline">by @{creatorHandle ?? "unknown"}</span>
+          {creatorId || creatorHandle ? (
+            <Link
+              href={`/creator/${creatorId ?? creatorHandle}`}
+              className="hidden text-outline hover:text-primary sm:inline"
+            >
+              by @{creatorHandle ?? "unknown"}
+            </Link>
+          ) : (
+            <span className="hidden text-outline sm:inline">by @{creatorHandle ?? "unknown"}</span>
+          )}
         </div>
         {/* Progress rail */}
         <div className="h-1 w-full overflow-hidden rounded-full bg-outline-variant/40">

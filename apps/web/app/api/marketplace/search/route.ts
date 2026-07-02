@@ -31,6 +31,7 @@ export async function GET(req: NextRequest) {
       summary: r.summary,
       contentType: r.content_type,
       pricePerBlock: r.price_per_block,
+      creatorId: r.creator_id,
       creatorHandle: r.creator_handle,
       creatorName: r.creator_name,
       rank: r.rank,

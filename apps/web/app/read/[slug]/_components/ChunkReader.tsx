@@ -67,6 +67,7 @@ interface Props {
   slug: string;
   title: string;
   summary: string;
+  creatorId?: string | null;
   creatorHandle: string | null;
   contentType: string;
   pricePerBlock: string;
@@ -84,7 +85,7 @@ interface Props {
 }
 
 export default function ChunkReader(props: Props) {
-  const { slug, title, summary, creatorHandle, pricePerBlock, chunks, agentUrl } = props;
+  const { slug, title, summary, creatorId, creatorHandle, pricePerBlock, chunks, agentUrl } = props;
   const isPicture = props.contentType === "picture";
   const isOwner = props.isOwner ?? false;
   const isAuthor = props.isAuthor ?? false;
@@ -226,12 +227,15 @@ export default function ChunkReader(props: Props) {
     }
   };
 
-  const payable = chunks.filter((c) => !c.isFree);
+  // Free post (price 0): the whole piece is free, so nothing is payable and the
+  // paywall chrome is skipped — independent of per-chunk `isFree` preview flags.
+  const isFreePost = Number(pricePerBlock) <= 0;
+  const payable = isFreePost ? [] : chunks.filter((c) => !c.isFree);
   const unlockedChunkIds = useMemo(() => {
     const set = new Set<string>();
-    for (const c of chunks) if (c.isFree || isOwner || unlocked[c.blockIndex] !== undefined) set.add(c.id);
+    for (const c of chunks) if (c.isFree || isOwner || isFreePost || unlocked[c.blockIndex] !== undefined) set.add(c.id);
     return set;
-  }, [chunks, unlocked, isOwner]);
+  }, [chunks, unlocked, isOwner, isFreePost]);
   const unlockedPayable = payable.filter((c) => unlockedChunkIds.has(c.id)).length;
   const nextLocked = payable.find((c) => !unlockedChunkIds.has(c.id));
   const allUnlocked = payable.length > 0 && unlockedPayable === payable.length;
@@ -662,16 +666,18 @@ export default function ChunkReader(props: Props) {
       <h1 className="font-display-lg text-display-lg-mobile">{title}</h1>
       <p className="mb-2 font-body-md text-on-surface-variant">
         by{" "}
-        {creatorHandle ? (
-          <Link href={`/creator/${creatorHandle}`} className="font-semibold text-on-surface hover:text-primary hover:underline">
-            @{creatorHandle}
+        {creatorId || creatorHandle ? (
+          <Link href={`/creator/${creatorId ?? creatorHandle}`} className="font-semibold text-on-surface hover:text-primary hover:underline">
+            @{creatorHandle ?? "unknown"}
           </Link>
         ) : (
           "@unknown"
         )}
       </p>
 
-      {/* Progress — the reading-fuel % sits inline here (tap to expand the pill). */}
+      {/* Progress — the reading-fuel % sits inline here (tap to expand the pill).
+          Hidden when nothing is payable (free post, or a single free block). */}
+      {payable.length > 0 && (
       <div className="mb-6 flex items-center gap-2 font-body-sm text-on-surface-variant">
         <span>{unlockedPayable} of {payable.length} {isPicture ? "images" : "blocks"} unlocked</span>
         {sessionActive && <span className="text-secondary">· one-tap on</span>}
@@ -682,6 +688,7 @@ export default function ChunkReader(props: Props) {
           </span>
         )}
       </div>
+      )}
 
       {summary && <p className="mb-6 border-l-4 border-outline-variant pl-4 font-body-lg text-on-surface-variant">{summary}</p>}
 
@@ -727,7 +734,7 @@ export default function ChunkReader(props: Props) {
 
       <div className="flex flex-col gap-4">
         {chunks.map((c) => {
-          const text = c.isFree || isOwner ? c.text : unlocked[c.blockIndex];
+          const text = c.isFree || isOwner || isFreePost ? c.text : unlocked[c.blockIndex];
           const isUnlocked = text !== undefined && text !== null;
           let inner: ReactNode;
           if (isUnlocked) {

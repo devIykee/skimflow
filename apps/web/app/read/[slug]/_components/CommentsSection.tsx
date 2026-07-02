@@ -501,13 +501,8 @@ function Composer({
       <textarea
         value={value}
         onChange={(e) => setValue(e.target.value.slice(0, MAX))}
-        onKeyDown={(e) => {
-          // Enter submits; Shift+Enter (or empty) inserts a newline.
-          if (e.key === "Enter" && !e.shiftKey) {
-            e.preventDefault();
-            void submit();
-          }
-        }}
+        // No keyboard submission: Enter inserts a newline (multiline textarea) and
+        // every other key types normally. Comments post only via the Post/Reply button.
         maxLength={MAX}
         rows={compact ? 2 : 3}
         autoFocus={autoFocus}

@@ -119,6 +119,30 @@ export default function ContentManager({ impersonating }: { impersonating: boole
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Deep-link from the composer's Paid toggle (/dashboard?compose=1): prefill the
+  // editor body with the draft the composer stashed, so a paid post continues
+  // where the quick composer left off. Runs once on mount, then strips the param.
+  const composeParamHandled = useRef(false);
+  useEffect(() => {
+    if (composeParamHandled.current || typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("compose") == null) return;
+    composeParamHandled.current = true;
+    try {
+      const raw = localStorage.getItem("skimflow:composer:handoff");
+      if (raw) {
+        const d = JSON.parse(raw) as { body?: string };
+        if (d.body) setBody(d.body);
+        setContentType("article");
+      }
+      localStorage.removeItem("skimflow:composer:handoff");
+    } catch {
+      /* ignore malformed handoff */
+    }
+    window.history.replaceState(null, "", window.location.pathname);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Live commission + chunk preview.
   useEffect(() => {
     if (!body.trim()) {
